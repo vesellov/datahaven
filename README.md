@@ -25,3 +25,41 @@ python dhn.py show
 
 
 
+Dependencies
+============
+
+python 2.6 or 2.7, python3 is not supported
+    http://python.org/download/releases
+    
+twisted 11.0 or higher: 
+    http://twistedmatrix.com
+    
+pyasn1: 
+    http://pyasn1.sourceforge.net
+    
+pyOpenSSL: 
+    https://launchpad.net/pyopenssl
+    
+pycrypto: 
+    https://www.dlitz.net/software/pycrypto/
+    
+PIL: 
+    http://www.pythonware.com/products/pil
+    
+wxgtk2.8: 
+    http://wiki.wxpython.org/InstallingOnUbuntuOrDebian
+
+
+Or just install those packages if you have them in repos:
+    
+python
+python-twisted
+python-pyasn1
+python-openssl
+python-crypto
+python-wxgtk2.8
+python-imaging 
+
+
+
+ 
