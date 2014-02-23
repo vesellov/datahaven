@@ -20,6 +20,7 @@ import re
 import traceback
 
 import wx
+import wx.html
 
 from twisted.internet import wxreactor
 wxreactor.install()
@@ -1523,6 +1524,7 @@ def main():
 
     WriteText('', 'dhnview-err.log', 'w')
     WriteText(time.asctime()+' started\n', 'dhnview.log', 'w')
+    WriteText('Forms: %s\n' % str(forms))
 
     app = MyApp(url)
 

@@ -518,31 +518,24 @@ def StringToObject(input):
     try:
         bananaDecode = banana.decode(input)
     except:
-        try:
-            _data = input
-            ver, x, _data = _data.partition(' ')
-            cmd, x, _data = _data.partition(' ')
-            portorlength, x, _data = _data.partition(' ')
-            int(ver)
-            assert cmd in ['length', 'port']
-            int(portorlength)
-            input = _data
-            bananaDecode = banana.decode(input)
-        except:
-            try:
-                _data = input
-                portorlength, x, _data = _data.partition(' ')
-                int(portorlength)
-                input = _data
-                bananaDecode = banana.decode(input)
-            except:
-                if len(input) > 0:
-                    fd, filename = tmpfile.make('other', '', 'banana.error-')
-                    os.write(fd, input)
-                    os.close(fd)
-                dhnio.Dprint(1, 'misc.StringToObject ERROR in banana.decode, data length=%d' % len(input))
-                dhnio.DprintException()
-                return None
+#         try:
+#             _data = input
+#             ver, x, _data = _data.partition(' ')
+#             cmd, x, _data = _data.partition(' ')
+#             portorlength, x, _data = _data.partition(' ')
+#             int(ver)
+#             # assert cmd in ['length', 'port']
+#             int(portorlength)
+#             input = _data
+#             bananaDecode = banana.decode(input)
+#         except:
+            if len(input) > 0:
+                fd, filename = tmpfile.make('other', '', 'banana.error-')
+                os.write(fd, input)
+                os.close(fd)
+            dhnio.Dprint(1, 'misc.StringToObject ERROR in banana.decode, data length=%d' % len(input))
+            dhnio.DprintException()
+            return None
     
     try:
         # works for 384 bit RSA keys
@@ -1514,8 +1507,8 @@ def SendDevReport(subject, body, includelogs, progress=None, receiverDeferred=No
             for filename in filesList:
                 if os.path.isfile(filename):
                     try:
-                        if os.path.getsize(filename) < 1024*1024*1:
-                            zfile.write(filename, os.path.basename(filename))
+                        # if os.path.getsize(filename) < 1024*1024*10:
+                        zfile.write(filename, os.path.basename(filename))
                     except:
                         pass
             zfile.close()
@@ -1722,18 +1715,20 @@ if __name__ == '__main__':
 #    from twisted.internet.defer import setDebugging
 #    setDebugging(True)
 
-#    if True:
-#        from twisted.internet import reactor
-#        from twisted.internet.defer import Deferred        
-#        def _progress(x, y):
-#            print '%d/%d' % (x,y)      
-#        def _done(x):
-#            print 'DONE', x
-#            reactor.stop()  
-#        d = Deferred()
-#        d.addBoth(_done)
-#        SendDevReport('subject ' + time.strftime('%m:%s'), 'some body112', True, _progress, d)
-#        reactor.run()
+    if True:
+        from twisted.internet import reactor
+        from twisted.internet.defer import Deferred        
+        def _progress(x, y):
+            print '%d/%d' % (x,y)      
+        def _done(x):
+            print 'DONE', x
+            reactor.stop()  
+        d = Deferred()
+        d.addBoth(_done)
+        SendDevReport('subject ', 'some body112', True, _progress, d)
+        reactor.run()
+        
+        
 #    else:
 #        SendDevReportOld('subject', 'some body\n LALALALAL\n DataHaven.NET for all!!!', True)
 

@@ -177,8 +177,8 @@ def IN(idurl, size):
     currentV += size
     BandInDict[idurl] = currentV
     saveIN()
-    dhnio.Dprint(12, 'bandwidth.IN %d(+%d) for %s. len=%d' % (
-        currentV, size, idurl, len(BandInDict)))
+    # dhnio.Dprint(12, 'bandwidth.IN %d(+%d) for %s. len=%d' % (
+    #     currentV, size, idurl, len(BandInDict)))
 
 
 def OUT(idurl, size):
@@ -194,8 +194,8 @@ def OUT(idurl, size):
     currentV += size
     BandOutDict[idurl] = currentV
     saveOUT()
-    dhnio.Dprint(12, 'bandwidth.OUT %d(+%d) for %s. len=%d' % (
-        currentV, size, idurl, len(BandOutDict)))
+    # dhnio.Dprint(12, 'bandwidth.OUT %d(+%d) for %s. len=%d' % (
+    #     currentV, size, idurl, len(BandOutDict)))
 
 
 def INfile(filename, newpacket, proto, host, status):

@@ -178,7 +178,6 @@ _BlackIPs = {}
 #------------------------------------------------------------------------------
 
 # init is called on startup
-# from dhninit.py or install.py
 def init(init_callback=None, init_contacts=None):
     global _InitDone
     global _TransportEmailEnable
@@ -525,6 +524,7 @@ def StopProtocol(proto):
     if l is not None:
         try:
             if proto == 'tcp':
+                transport_tcp.disconnect_all()
                 d = l.stopListening()
             elif proto == 'ssh':
                 d = l.stopListening()
@@ -545,6 +545,7 @@ def StopProtocol(proto):
             del l
         except:
             dhnio.DprintException()
+            d = None
     SetProtocolListener(proto, None)
     SetProtocolOptions(proto, ('','','',''))
     SetProtocolSupport(proto, False)
@@ -593,7 +594,7 @@ def RegisterInterest(CallBackFunction, CreatorID, PacketID):
             if oldparty.CallBackFunction == CallBackFunction and oldparty.ComboID == newparty.ComboID:
                 return                                # already here
     if len(ExistingList) == 0:                      # if nothing there
-        _InterestedParties[newparty.ComboID]=[]        #    then make it a list
+        _InterestedParties[newparty.ComboID] = []        #    then make it a list
     _InterestedParties[newparty.ComboID].append(newparty) # add new callback to list
     # lp=len(_InterestedParties)
     # dhnio.Dprint(12, "transport_control.RegisterInterest ComboID=%s _InterestedParties=%s " % (newparty.ComboID, str(lp)))
@@ -634,11 +635,11 @@ def FetchAndCallBack(CallBackFunction, CreatorID, PacketID, SupplierNumber):
 def DeleteBackupInterest(BackupName):
     global _InterestedParties
     found = False
-    partystoremove=[]
+    partystoremove = set()
     for combokey in _InterestedParties.keys():
         if (combokey.find(":"+BackupName) != -1): # if the interest is for packet belonging to a backup we're dealing with
             # dhnio.Dprint(12, "transport_control.DeleteBackupInterest found for " + combokey)
-            partystoremove.append(combokey)                   #   will remove party since got his callback
+            partystoremove.add(combokey)        #   will remove party since got his callback
             found=True
     for combokey in partystoremove:                           #
         # dhnio.Dprint(12, "transport_control.DeleteBackupInterest removing " + combokey)
@@ -808,7 +809,7 @@ def inbox(filename, proto='', host=''):
         os.close(fd)
         return None
 
-    dhnio.Dprint(12, "transport_control.inbox [%s] from %s, MyProtos=%s" % (Command, nameurl.GetName(OwnerID), str(_MyProtos.get(CreatorID, set()))))
+    dhnio.Dprint(12, "transport_control.inbox [%s:%s] from %s" % (Command, PacketID, nameurl.GetName(OwnerID)))
 
     UpdateContactAliveTime(OwnerID)
     #contact_status(packet_from, 'inbox-packet', newpacket)
@@ -835,6 +836,78 @@ def inbox(filename, proto='', host=''):
     return newpacket
 
 
+# doAck=True      if we want to wait for an Ack before counting finished
+# wide=True       if we want to send packet to all contacts of Remote Identity
+# retries=3       how mamy times we want to try to send the packet
+def outbox(outpacket, doAck, wide=False, retries=settings.MaxRetries()):
+    global _OutboxPacketCallbacksList
+    global _PingContactsDict
+    
+    outpacket.wide = wide
+
+    if outpacket.CreatorID != misc.getLocalID():      # if we did not make this packet
+        if outpacket.Command == commands.Data():      # and it is a Data packet
+            destinationID = outpacket.CreatorID       # sending someone their data back
+        else:
+            raise Exception("transport_control.outbox has packet we did not make that is not Data packet")
+    else:
+        # we made packet for someone else
+        destinationID = outpacket.RemoteID
+
+    destinationID = destinationID.strip()
+
+    if destinationID == '':
+        return
+
+    dhnio.Dprint(12, "transport_control.outbox [%s:%s] to %s doAck=%s wide=%s" % (
+        outpacket.Command, outpacket.PacketID, nameurl.GetName(outpacket.RemoteID), 
+        str(doAck), str(wide)))
+    for cb in _OutboxPacketCallbacksList:
+        try:
+            cb(outpacket)
+        except:
+            dhnio.DprintException()
+
+    #  convert ID to identity
+    destinationIdentity = contacts.getContact(destinationID)
+    if destinationIdentity is None:
+        d = identitycache.immediatelyCaching(destinationID)
+        d.addCallback(outboxAfterIdentityCaching, outpacket, doAck, wide)
+        d.addErrback(identityCachingFailed, destinationID, outpacket, doAck, wide, 0)
+        # Can not send without identity
+        return
+
+    fileno, filename = tmpfile.make('outbox')
+    packet_data = outpacket.Serialize()
+    os.write(fileno, packet_data)
+    os.close(fileno)
+
+    workitem = QueueItem(
+        filename,
+        len(packet_data),
+        doAck,
+        "presend",
+        outpacket.PacketID,
+        destinationID,
+        outpacket.Command,
+        wide,
+        len(outpacket.Payload),
+        retries,)
+    
+    SendQueueAppend(workitem)
+    
+    _PingContactsDict[destinationID] = time.time()
+    
+    del packet_data
+    
+    DoSend()
+
+    # contact_status(destinationID, 'outbox-packet', outpacket)
+
+    # dhnio.Dprint(14, "transport_control.outbox queue=%d" % SendQueueLength())
+    
+#------------------------------------------------------------------------------ 
+
 def SendAck(packettoack, response=''):
     MyID = misc.getLocalID()
     RemoteID = packettoack.OwnerID
@@ -845,7 +918,7 @@ def SendAck(packettoack, response=''):
     
 def SendFail(request, response=''):
     # dhnio.Dprint(14, "transport_control.SendFail sending to " + request.OwnerID)
-    result = dhnpacket.dhnpacket(commands.Fail(), request.CreatorID, misc.getLocalID(), request.PacketID, response, request.CreatorID)
+    result = dhnpacket.dhnpacket(commands.Fail(), misc.getLocalID(), misc.getLocalID(), request.PacketID, response, request.CreatorID)
     outboxNoAck(result)
         
     
@@ -897,75 +970,6 @@ def identityCachingFailed(pagesrc, destinationID, outpacket, doAck, wide=False, 
         d.addErrback(identityCachingFailed, destinationID, outpacket, doAck, wide, count)
     reactor.callLater(10, do_again, count+1)
 
-# doAck=True      if we want to wait for an Ack before counting finished
-# wide=True       if we want to send packet to all contacts of Remote Identity
-# retries=3       how mamy times we want to try to send the packet
-def outbox(outpacket, doAck, wide=False, retries=settings.MaxRetries()):
-    global _OutboxPacketCallbacksList
-    global _PingContactsDict
-    
-    outpacket.wide = wide
-
-    if outpacket.CreatorID != misc.getLocalID():      # if we did not make this packet
-        if outpacket.Command == commands.Data():      # and it is a Data packet
-            destinationID = outpacket.CreatorID       # sending someone their data back
-        else:
-            raise Exception("transport_control.outbox has packet we did not make that is not Data packet")
-    else:
-        # we made packet for someone else
-        destinationID = outpacket.RemoteID
-
-    destinationID = destinationID.strip()
-
-    if destinationID == '':
-        return
-
-    dhnio.Dprint(12, "transport_control.outbox [%s] to %s doAck=%s wide=%s PeerProtos=%s" % (
-        outpacket.Command, nameurl.GetName(outpacket.RemoteID), 
-        str(doAck), str(wide), str(_PeersProtos.get(destinationID, set()))))
-    for cb in _OutboxPacketCallbacksList:
-        try:
-            cb(outpacket)
-        except:
-            dhnio.DprintException()
-
-    #  convert ID to identity
-    destinationIdentity = contacts.getContact(destinationID)
-    if destinationIdentity is None:
-        d = identitycache.immediatelyCaching(destinationID)
-        d.addCallback(outboxAfterIdentityCaching, outpacket, doAck, wide)
-        d.addErrback(identityCachingFailed, destinationID, outpacket, doAck, wide, 0)
-        # Can not send without identity
-        return
-
-    fileno, filename = tmpfile.make('outbox')
-    packet_data = outpacket.Serialize()
-    os.write(fileno, packet_data)
-    os.close(fileno)
-
-    workitem = QueueItem(
-        filename,
-        len(packet_data),
-        doAck,
-        "presend",
-        outpacket.PacketID,
-        destinationID,
-        outpacket.Command,
-        wide,
-        len(outpacket.Payload),
-        retries,)
-    
-    SendQueueAppend(workitem)
-    
-    _PingContactsDict[destinationID] = time.time()
-    
-    del packet_data
-    
-    DoSend()
-
-    # contact_status(destinationID, 'outbox-packet', outpacket)
-
-    # dhnio.Dprint(14, "transport_control.outbox queue=%d" % SendQueueLength())
 
 
 #------------------------------------------------------------------------------
@@ -986,9 +990,12 @@ def receiveStatusReport(filename, status, proto='', host_=None, error=None, mess
         if proto != 'tcp':
             msg = '(' + str(error) + ') ' + msg
 
-    dhnio.Dprint(8, '            [%s]     << %s from %s %s %s' % (proto.upper().ljust(5), status.ljust(8), host, msg, os.path.basename(filename),))
-
     if not _InitDone:
+        dhnio.Dprint(8, '   !skip!   [%s]     << %s from %s %s %s' % (proto.upper().ljust(5), status.ljust(8), host, msg, os.path.basename(filename),))
+        return
+
+    if status != 'finished':
+        dhnio.Dprint(8, '   !fail!   [%s]     << %s from %s %s %s' % (proto.upper().ljust(5), status.ljust(8), host, msg, os.path.basename(filename),))
         return
 
     newpacket = inbox(filename, proto, host)
@@ -998,9 +1005,9 @@ def receiveStatusReport(filename, status, proto='', host_=None, error=None, mess
         # because we receive from him using this proto
         if not _MyProtos.has_key(newpacket.CreatorID):
             _MyProtos[newpacket.CreatorID] = set()
-        if status is 'finished':
+        if status == 'finished':
             _MyProtos[newpacket.CreatorID].add(proto)
-        
+
         for cb in _InboxPacketStatusCallbacksList:
             cb(newpacket, status, proto, host, error, message)
 
@@ -1009,12 +1016,16 @@ def receiveStatusReport(filename, status, proto='', host_=None, error=None, mess
 
         bandwidth.INfile(filename, newpacket, proto, host, status)
         
-        if status is 'finished':
+        if status == 'finished':
             dhnnet.ConnectionDone(newpacket, proto, 'receiveStatusReport %s' % host)
         else:
             dhnnet.ConnectionFailed(newpacket, proto, 'receiveStatusReport %s' % host)
 
+        dhnio.Dprint(8, '            [%s]     << %s from %s at %s %s %s' % (
+            proto.upper().ljust(5), status.ljust(8), nameurl.GetName(newpacket.CreatorID), host, msg, os.path.basename(filename),))
+
     else:
+        dhnio.Dprint(8, '   !none!   [%s]     << %s from %s %s %s' % (proto.upper().ljust(5), status.ljust(8), host, msg, os.path.basename(filename),))
         dhnnet.ConnectionFailed(None, proto, 'receiveStatusReport %s' % host)
         try:
             fd, filename = tmpfile.make('other', '.inbox.error')
@@ -1029,10 +1040,6 @@ def receiveStatusReport(filename, status, proto='', host_=None, error=None, mess
         #delayeddelete.DeleteAfterTime(filename, 60)
         tmpfile.throw_out(filename, 'received status report')
 
-
-
-
-#------------------------------------------------------------------------------
 # When the transport layer has finished or failed
 # it calls this so we can clean up queue and temp file
 # Tricky problem is when we are doing a retransmission
@@ -1056,7 +1063,7 @@ def sendStatusReport(host_, filename, status, proto='', error=None, message=''):
         return
 
     speed = 0
-    itemstoremove=[]
+    itemstoremove = set()
     for workitem in SendQueue():
         if filename == workitem.filename:
             # let's remember this proto is working to this guy
@@ -1068,7 +1075,10 @@ def sendStatusReport(host_, filename, status, proto='', error=None, message=''):
             workitem.counts -= 1
             # If we don't need an Ack or already have it then we are done with this
             if workitem.doack == False or workitem.status == "acked":
-                itemstoremove.append(workitem)
+                itemstoremove.add(workitem)
+            # if we need an ack but sending was failed - we will never get that ack - remove item
+            elif workitem.doack and status != 'finished':
+                itemstoremove.add(workitem) 
             else:
                 # workitem.status = "sent"
                 # workitem.status = 'failed' if status != 'finished' else 'sent'
@@ -1082,7 +1092,7 @@ def sendStatusReport(host_, filename, status, proto='', error=None, message=''):
             if not _SentFailedCountDict.has_key(workitem.remoteid):
                 _SentFailedCountDict[workitem.remoteid] = 0
                 
-            if status is 'finished':
+            if status == 'finished':
                 _SentFailedCountDict[workitem.remoteid] = 0
                 dhnnet.ConnectionDone(filename, proto, 'sendStatusReport %s' % host)
             else:
@@ -1097,9 +1107,10 @@ def sendStatusReport(host_, filename, status, proto='', error=None, message=''):
 
             bandwidth.OUTfile(filename, workitem, proto, host, status)
  
-    dhnio.Dprint(8, "            [%s] >>     %s to %s %s %s" % (proto.upper().ljust(5), status.ljust(8), host, msg, os.path.basename(filename)))
+            dhnio.Dprint(8, "            [%s] >>     %s to %s at %s %s %s" % (
+                proto.upper().ljust(5), status.ljust(8), nameurl.GetName(workitem.remoteid), host, msg, os.path.basename(filename)))
 
-    # Also removes filename
+    # Also remove temp file from disk
     for itemtoremove in itemstoremove:
         SendQueueRemove(itemtoremove, True, why='send status')
     del itemstoremove
@@ -1341,7 +1352,8 @@ def GetFromSendQueue():           # get the next thing that has not been sent ye
                     dhnio.Dprint(8, "transport_control.GetFromSendQueue NETERROR timeout sending to %s" % nameurl.GetName(workitem.remoteid))
                     for transferID in workitem.transfers:
                         CancelFile(transferID)
-                    SendQueueRemove(workitem, why='timeout sending')
+                    if workitem in SendQueue():
+                        SendQueueRemove(workitem, why='timeout sending')
                 elif workitem.status == 'failed':
                     dhnio.Dprint(8, "transport_control.GetFromSendQueue NETERROR failed sending to %s" % nameurl.GetName(workitem.remoteid))
                     SendQueueRemove(workitem, why='sending was failed')
@@ -1352,11 +1364,11 @@ def GetFromSendQueue():           # get the next thing that has not been sent ye
 # We have a Queue of things to send so we can do bandwidth limit and also retry
 # Command on Packet does not matter, just remoteid and packetid
 def HandleSendQueueAck(packet):
-    itemstoremove=[]
+    itemstoremove = set()
     for workitem in SendQueue():
         if workitem.packetid == packet.PacketID and workitem.remoteid == packet.OwnerID:
             # dhnio.Dprint(14, "transport_control.HandleSendQueueAck removing item with status " + workitem.status)
-            itemstoremove.append(workitem)
+            itemstoremove.add(workitem)
     for itemtoremove in itemstoremove:
         SendQueueRemove(itemtoremove, True, why='got ack')       # Also removes filename
 
@@ -1505,7 +1517,7 @@ def SendFile(filename, protocol, host, port, idurl, filesize, command, packetid)
         dhnio.Dprint(8, 'transport_control.SendFile WARNING %s not found to %s://%s:%s, [%s]->[%s]' %  (os.path.basename(filename), protocol, host, port, command, nameurl.GetName(idurl)))
         sendStatusReport((host, port), filename, 'failed', protocol, None, 'file not found')
         return 
-    dhnio.Dprint(10, 'transport_control.SendFile %s (%d bytes) to %s://%s:%s, [%s]->[%s]' %  (os.path.basename(filename), filesize, protocol, host, port, command, nameurl.GetName(idurl)))
+    dhnio.Dprint(14, 'transport_control.SendFile %s (%d bytes) to %s://%s:%s, [%s]->[%s]' %  (os.path.basename(filename), filesize, protocol, host, port, command, nameurl.GetName(idurl)))
     try:
         if protocol == "tcp":
             transport_tcp.send(filename, host, port, description=command+'('+packetid+')') # send_control_func=SendTrafficControl
@@ -1534,7 +1546,7 @@ def CancelFile(transferID):
     global _LiveTransfers
     fti = _LiveTransfers.get(transferID, None)
     if not fti:
-        dhnio.Dprint(6, "transport_control.CancelFile WARNING can not find transfer %s, %d known transfers" % (transferID, len(_LiveTransfers)))
+        # dhnio.Dprint(6, "transport_control.CancelFile WARNING can not find transfer %s, %d known transfers" % (transferID, len(_LiveTransfers)))
         return 
     dhnio.Dprint(8, 'transport_control.CancelFile %s to %s' % (fti.filename, fti.remote_address))
     try:
@@ -1654,22 +1666,21 @@ class FileTransferInfo():
         self.send_or_receive = send_or_receive
         self.remote_address = remote_address
         self.proto_address = '%s://%s' % (self.proto, misc.getRealHost(self.remote_address))
-#        if isinstance(remote_address, tuple) and len(remote_address) == 2:  
-#            self.real_address = identitycache.RemapContactAddress(self.remote_address)
-#        else:
-#            self.real_address = self.proto_address
         if self.remote_address[0] in ['67.207.147.183', settings.IdentityServerName()]:
             self.remote_idurl = settings.IdentityServerName()
-        self.remote_idurl = contacts.getIDByAddress(self.proto_address)
-        if self.remote_idurl is None:
-            self.remote_idurl = contacts.getIDByAddress(self.remote_address)
-        if self.remote_idurl is None:
-            self.remote_idurl = identitycache.SearchLocalIP(self.remote_address[0])
-        if self.remote_idurl is None:
-            try:
-                self.remote_idurl = remote_address[0]+':'+str(remote_address[1])
-            except:
-                self.remote_idurl = str(remote_address)        
+        else:
+            self.remote_idurl = contacts.getIDByAddress(self.proto_address)
+            if self.remote_idurl is None and proto == 'tcp' and self.remote_address in transport_tcp._RedirectionsMap:
+                self.remote_idurl = contacts.getIDByAddress(transport_tcp._RedirectionsMap.get(self.remote_address))
+            if self.remote_idurl is None:
+                self.remote_idurl = contacts.getIDByAddress(self.remote_address)
+            if self.remote_idurl is None:
+                self.remote_idurl = identitycache.SearchLocalIP(self.remote_address[0])
+            if self.remote_idurl is None:
+                try:
+                    self.remote_idurl = self.remote_address[0]+':'+str(self.remote_address[1])
+                except:
+                    self.remote_idurl = str(remote_address)
         self.filename = filename
         self.size = size
         self.callback = callback
@@ -1724,8 +1735,8 @@ def unregister_transfer(transfer_id):
     global _Counters
     info = _LiveTransfers.pop(transfer_id, None)
     if info is None:
-        dhnio.Dprint(6, '!!!!!!  transport_control.unregister_transfer WARNING %d not found, others:%d' % (
-            transfer_id, len(_LiveTransfers)))
+        dhnio.Dprint(6, '!!!!!!  transport_control.unregister_transfer WARNING %s is not found, others:%d' % (
+            str(transfer_id), len(_LiveTransfers)))
         return False
     b = info.get_bytes_transferred()
     dt = time.time() - info.started
@@ -1753,6 +1764,14 @@ def unregister_transfer(transfer_id):
     del info
     return True
 
+#------------------------------------------------------------------------------ 
+
+def cancel_all_transfers():
+    for transfer_id in current_transfers_ids():
+        CancelFile(transfer_id)            
+    
+#------------------------------------------------------------------------------ 
+
 def transfer_by_id(transfer_id, default=None):
     global _LiveTransfers
     return _LiveTransfers.get(transfer_id, default)
@@ -1764,6 +1783,10 @@ def transfers_by_idurl(idurl):
 def current_transfers():
     global _LiveTransfers
     return _LiveTransfers.values()
+
+def current_transfers_ids():
+    global _LiveTransfers
+    return _LiveTransfers.keys()
 
 def current_bytes_transferred():
     global _LiveTransfers

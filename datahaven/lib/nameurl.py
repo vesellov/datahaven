@@ -88,6 +88,8 @@ def UrlFilenameHTML(url):
 def GetName(url):
     if url in [None, 'None', '',]:
         return ''
+    if not url.endswith('.xml'):
+        return url        
     #return url[url.rfind("/")+1:url.rfind(".")]
     return url[url.rfind("/")+1:-4]
 

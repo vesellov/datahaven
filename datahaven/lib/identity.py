@@ -37,7 +37,7 @@ default_identity_src = """<?xml version="1.0" encoding="ISO-8859-1"?>
   <postage>1
   </postage>
   <date></date>
-  <version>100</version>
+  <version>0</version>
   <publickey></publickey>
   <signature></signature>
 </identity>"""
@@ -225,14 +225,19 @@ class identity:
             return None
         return nameurl.UrlParse(c)[0]
 
-    def getIP(self):
+    def getIP(self, proto=None):
+        if proto:
+            host = self.getProtoHost(proto)
+            if host:
+                return host
         host = self.getProtoHost('tcp')
-        if host is None:
-            host = self.getProtoHost('udp')
-        if host is None:
-            host = self.getProtoHost('ssh')
-        if host is None:
-            host = self.getProtoHost('http')
+        if host:
+            return host
+        host = self.getProtoHost('udp')
+#        if host is None:
+#            host = self.getProtoHost('ssh')
+#        if host is None:
+#            host = self.getProtoHost('http')
         return host
 
     def deleteProtoContact(self, proto):

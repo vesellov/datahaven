@@ -88,6 +88,7 @@ import message
 import local_tester
 import backup_matrix
 import backup_control
+import central_service
 #import summary
 
 
@@ -143,7 +144,8 @@ def inbox(newpacket, proto='', host=''):
 
     handled = inboxPacket(newpacket, proto, host)
     if handled:
-        dhnio.Dprint(12, "p2p_service.inbox [%s] from %s (%s://%s) handled" % (newpacket.Command, nameurl.GetName(newpacket.CreatorID), proto, host))
+        dhnio.Dprint(12, "p2p_service.inbox [%s] from %s|%s (%s://%s) handled" % (
+            newpacket.Command, nameurl.GetName(newpacket.CreatorID), nameurl.GetName(newpacket.OwnerID), proto, host))
 
     return handled
 
@@ -270,7 +272,9 @@ def Data(request):
         return
     # 2. this Data is not belong to us
     if not contacts.IsCustomer(request.OwnerID):  # SECURITY
+        # may be we did not get the ListCustomers packet from the Central yet?
         dhnio.Dprint(6, "p2p_service.Data WARNING %s not a customer, packetID=%s" % (request.OwnerID, request.PacketID))
+        central_service.SendRequestCustomers()
         return 
     filename = makeFilename(request.OwnerID, request.PacketID)
     if filename == "":

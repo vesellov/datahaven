@@ -36,7 +36,7 @@ import ratings
 
 
 _ContactsStatusDict = {}
-
+_ShutdownFlag = False
 
 #------------------------------------------------------------------------------ 
 
@@ -55,13 +55,18 @@ def init():
 
 def shutdown():
     dhnio.Dprint(4, 'contact_status.shutdown')
+    global _ShutdownFlag
     global _ContactsStatusDict
     for A in _ContactsStatusDict.values():
         automat.clear_object(A.index)
     _ContactsStatusDict.clear()
+    _ShutdownFlag = True
     
 
 def isOnline(idurl):
+    global _ShutdownFlag
+    if _ShutdownFlag:
+        return False
     if idurl in [None, 'None', '']:
         return False
     global _ContactsStatusDict
@@ -71,6 +76,9 @@ def isOnline(idurl):
 
 
 def isOffline(idurl):
+    global _ShutdownFlag
+    if _ShutdownFlag:
+        return True
     if idurl in [None, 'None', '']:
         return True
     global _ContactsStatusDict
@@ -110,8 +118,11 @@ def countOnlineAmong(idurls_list):
 
 
 def A(idurl, event=None, arg=None):
+    global _ShutdownFlag
     global _ContactsStatusDict
     if not _ContactsStatusDict.has_key(idurl):
+        if _ShutdownFlag:
+            return None
         _ContactsStatusDict[idurl] = ContactStatus(idurl, 'status_%s' % nameurl.GetName(idurl), 'OFFLINE', 10)
     if event is not None:
         _ContactsStatusDict[idurl].automat(event, arg)
@@ -220,33 +231,3 @@ def PacketSendingTimeout(remoteID, packetID):
     # dhnio.Dprint(6, 'contact_status.PacketSendingTimeout ' + remoteID)
     A(remoteID, 'sent-timeout', packetID)
 
-
-#def TransportUDPSessionStateChanged(automatindex, oldstate, newstate):
-#    global _ContactsStatusDict
-##    if not _ContactsStatusDict.has_key(idurl):
-##        return
-#    sess = automat.objects().get(automatindex, None)
-#    if sess is None:
-#        return
-#    idurl = sess.remote_idurl
-#    if idurl is None:
-#        return
-#    ident = contacts.getContact(idurl)
-#    if ident is None:
-#        return
-#    address = ident.getProtoContact('udp')
-#    if address is None:
-#        return True
-#    try:
-#        ip, port = address[6:].split(':')
-#        address = (ip, int(port))
-#    except:
-#        dhnio.DprintException()
-#        return True
-#    if sess.remote_address == address or sess.remote_address == identitycache.RemapContactAddress(address):
-#        A(idurl, 'transport_udp_session.state', newstate)
-
-#def CSpaceContactStatus(contact, status):
-#    idurls = identitycache.GetIDURLsByContact('cspace://'+contact)
-#    idurl = idurls[0] if len(idurls) > 0 else ''
-#    dhnio.Dprint(10, 'contact_status.CSpaceContactStatus %s:%s is [%s]' % (nameurl.GetName(idurl), contact, status)) 

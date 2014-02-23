@@ -242,10 +242,25 @@ def init_modules():
     webcontrol.OnInitFinalDone()
 
 
+# def shutdown_automats():
+    # import lib.automats as automats
+    # for index, A in automats.get_automats_by_index().items():
+    #     if A.name.startswith()
+
 def shutdown(x=None):
     global initdone
     dhnio.Dprint(2, "dhninit.shutdown " + str(x))
     dl = []
+
+    import io_throttle
+    io_throttle.shutdown()
+
+    import backup_rebuilder 
+    backup_rebuilder.SetStoppedFlag()
+    
+    import data_sender
+    data_sender.SetShutdownFlag()
+    data_sender.A('restart')
 
     import lib.bitcoin as bitcoin
     bitcoin.shutdown()

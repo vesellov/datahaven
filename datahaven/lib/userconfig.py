@@ -203,7 +203,7 @@ class UserConfig:
  </general>
  <backup>
   <private-key-size>
-   1024
+   4096
   </private-key-size>
   <backup-block-size>
    262144

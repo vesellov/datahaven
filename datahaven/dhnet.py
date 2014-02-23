@@ -39,28 +39,18 @@ reactor = None
 
 # CSpace can open a socket for us - directly to the remote machine
 # after we sent a file we keep it opened ...
-# to be able to send the next file as soon as possible
-# we can send several files at same time - several opened sockets to this user
-# of course we want to close the socket after sent ...
-# but let's keep last socket opened ...    or last N sockets 
-OPENED_SENDING_STREAMS_NUMBER = 1
-MAXIMUM_SENDING_STREAMS_NUMBER = 5
-# after we receive a file from this man
-# we check if we have more files receiving at the moment from him
-# if yes - close this stream because not needed
-# so keep last N streams opened after receiving
-# may be we want to have more streams opened to increase speed 
-OPENED_RECEIVING_STREAMS_NUMBER = 1
+# to be able to send the next file as soon as possible and receive files from remote peer
+OPENED_STREAMS_NUMBER = 1
 
 # if sending below this limit - count this transfer as failed
 SENDING_SPEED_LIMIT = 5 * 1024 # 1KB/sec is about 3.5MB/hour
 
+CHUNK_SIZE = (2 ** 16) - 256
 
 _AppLogger = None
 _TempLocation = None
 _Notifier = None
-_ReceivingStreams = {}
-_SendingStreams = {}
+_OpenedStreams = {}
 _SendingDelay = 0.01
 _SendingOp = None
 _MonitorParentOp = None
@@ -169,32 +159,30 @@ class Application:
         
 
     def CheckSending(self):
-        global _SendingStreams
+        global _OpenedStreams
         global _InActionFilesDict
-        global MAXIMUM_SENDING_STREAMS_NUMBER
         keyID = self.readOutgoingQueue()
-        self.closeSendingStreams()
+        self.closeStreams()
         if not keyID:
             return False
         if not _InActionFilesDict.has_key(keyID):
             _InActionFilesDict[keyID] = []
-        if not _SendingStreams.has_key(keyID):
-            _SendingStreams[keyID] = []
+        if not _OpenedStreams.has_key(keyID):
+            _OpenedStreams[keyID] = []
         #--- HERE IS SENDING A FILE TO REMOTE GUY ---
-        # logger().info('found some file for %s, we have %d opened streams with him and %d actions' % (keyID, len(_SendingStreams[keyID]), len(_InActionFilesDict[keyID])))
-        if _SendingStreams.has_key(keyID) and len(_SendingStreams[keyID]) > 0:
-            for stream in _SendingStreams[keyID]:
+        if _OpenedStreams.has_key(keyID) and len(_OpenedStreams[keyID]) > 0:
+            for stream in _OpenedStreams[keyID]:
                 if stream.state == 'ready':
                     # logger().info('using existing stream to send the file to %s ' % keyID)
                     filename, transferID, description = popFileName(keyID)
                     if filename == '':
-                        notify().sent(keyID, filename, transferID, 'failed', None, 'no files to send in the queue')
+                        notify().sent(keyID, filename, transferID, 'failed', None, 'connection opened, but no files to send in the queue')
                         return False
                     stream.newFile(filename, transferID, description)
                     return True
-        if _SendingStreams.has_key(keyID) and len(_SendingStreams[keyID]) + len(_InActionFilesDict[keyID]) >= MAXIMUM_SENDING_STREAMS_NUMBER:
-            # logger().info('too many sending streams at the moment with %s ' % keyID)
-            return False
+#        if _OpenedStreams.has_key(keyID) and len(_OpenedStreams[keyID]) + len(_InActionFilesDict[keyID]) >= MAXIMUM_SENDING_STREAMS_NUMBER:
+#            # logger().info('too many sending streams at the moment with %s ' % keyID)
+#            return False
         if len(_InActionFilesDict[keyID]) > 0:
             # logger().info('already started action with %s ' % keyID)
             return False
@@ -225,20 +213,26 @@ class Application:
                 return str(keyid)
         return None
 
-    def closeSendingStreams(self):
-        global _SendingStreams
-        global OPENED_SENDING_STREAMS_NUMBER
+    def closeStreams(self):
+        global _OpenedStreams
+        global OPENED_STREAMS_NUMBER
         to_close = []
-        for keyID, streams in _SendingStreams.items():
+        counter = 0
+        for keyID, streams in _OpenedStreams.items():
+            i = 0
             for stream in streams:
+                counter += 1
+                i += 1
                 if stream.state != 'ready':
                     continue
-                if time.time() - stream.ready > 60 or OPENED_SENDING_STREAMS_NUMBER == 0:
+                if i > OPENED_STREAMS_NUMBER:
                     to_close.append(stream)
-        while len(to_close) > 0:
-            stream = to_close.pop(0)
-            if len(_SendingStreams[keyID]) > OPENED_SENDING_STREAMS_NUMBER or OPENED_SENDING_STREAMS_NUMBER == 0:
-                stream.connectionLost()
+                    continue
+                if counter > 200:
+                    to_close.append(stream)
+                    continue
+        for stream in to_close:
+            stream.connectionLost()
         del to_close
     
     def ProcessMonitoringParent(self):
@@ -460,7 +454,7 @@ class Application:
 
     def cancel(self, transferID):
         global _OutgoingFilesDict
-        global _SendingStreams
+        global _OpenedStreams
         for keyid in _OutgoingFilesDict.keys():
             for i in xrange(len(_OutgoingFilesDict[keyid])):
                 filename, transfer_id, description = _OutgoingFilesDict[keyid][i]
@@ -468,12 +462,13 @@ class Application:
                     del _OutgoingFilesDict[keyid][i]
                     notify().sent(keyid, filename, transferID, 'failed', None, 'file transfer canceled')
                     break
-        for keyid in _SendingStreams.keys():
-            for i in xrange(len(_SendingStreams[keyid])):
-                stream = _SendingStreams[keyid][i]
-                if stream.transferID and stream.transferID == transferID:
-                    stream.connectionLost()
-                    break 
+        for keyid in _OpenedStreams.keys():
+            for i in xrange(len(_OpenedStreams[keyid])):
+                stream = _OpenedStreams[keyid][i]
+                if stream.outboxFile:
+                    if stream.outboxFile.transferID and stream.outboxFile.transferID == transferID:
+                        stream.connectionLost()
+                        break 
         
     def add(self, keyID, add_callback=None):
         if self.service.profile.contactNames.has_key(keyID):
@@ -513,15 +508,10 @@ class Application:
         httpOp = HttpRequest( self.reactor )
         httpOp.get('http://identity.datahaven.net/cspacekeys/%s' % keyID, _onLookupResponse )
         
-    def set_sending_streams(self, num):
-        global OPENED_SENDING_STREAMS_NUMBER    
-        OPENED_SENDING_STREAMS_NUMBER = int(num)
-        logger().info('set sending streams number to %d' % int(num))
-        
-    def set_receiving_streams(self, num):
-        global OPENED_RECEIVING_STREAMS_NUMBER
-        OPENED_RECEIVING_STREAMS_NUMBER = int(num)
-        logger().info('set receiving streams number to %d' % int(num))
+    def set_opened_streams(self, num):
+        global OPENED_STREAMS_NUMBER    
+        OPENED_STREAMS_NUMBER = int(num)
+        logger().info('set opened streams number to %d' % int(num))
         
     #------------------------------------------------------------------------------ 
 
@@ -568,12 +558,8 @@ class Application:
         self.sendControlCommand('service-reconnect')
 
     def onStopped(self):
-        global _SendingStreams
-        global _ReceivingStreams
-        for streams in _SendingStreams.values():
-            for stream in streams:
-                stream.connectionLost()
-        for streams in _ReceivingStreams.values():
+        global _OpenedStreams
+        for streams in _OpenedStreams.values():
             for stream in streams:
                 stream.connectionLost()
         self.sendControlCommand('service-stopped')
@@ -618,8 +604,9 @@ class Application:
         
     def onAction(self, contactName):
         keyid = str(contactName)
+        
         def onConnectUser( err, sock ) :
-            global _SendingStreams
+            global _OpenedStreams
             global _InActionFilesDict 
             if not _InActionFilesDict.has_key(keyid):
                 notify().sent(keyid, '', '', 'failed', None, 'not found outgoing queue to that user')
@@ -636,12 +623,14 @@ class Application:
                     logger().exception()
                 notify().sent(keyid, filename, transferID, 'failed', err, 'error connecting')
                 return
-            if not _SendingStreams.has_key(keyid):
-                _SendingStreams[keyid] = []
+            if not _OpenedStreams.has_key(keyid):
+                _OpenedStreams[keyid] = []
             stream = TCPMessageStream(sock, self.reactor)
-            newSender = FileSender(self.reactor, stream, keyid)
-            _SendingStreams[keyid].append(newSender)
-            newSender.newFile(filename, transferID, description)
+            openedStream = OpenStream(self.reactor, keyid, stream)
+            _OpenedStreams[keyid].append(openedStream)
+            openedStream.newFile(filename, transferID, description)
+            notify().streams()
+            
         def onConnect( connector ) :
             global _InActionFilesDict 
             if connector.getError() != 0:
@@ -651,16 +640,19 @@ class Application:
                 if len(_InActionFilesDict[keyid]) == 0:
                     notify().sent(keyid, '', '', 'failed', None, 'no files to that user found in the outgoing queue')
                     return
-                filename, transferID, description = _InActionFilesDict[keyid].pop(0)
-                notify().sent(keyid, filename, transferID, 'failed', None, 'connection error: ' + connector.getErrorMsg())
+                for filename, transferID, description in _InActionFilesDict[keyid]:
+                    notify().sent(keyid, filename, transferID, 'failed', None, 'connection error: ' + connector.getErrorMsg())
+                _InActionFilesDict[keyid] = []
                 return
             CSpaceConnector(connector.sock, keyid, 'receive', self.reactor, onConnectUser)
+            
         tcpConnect(('127.0.0.1', self.appletport), self.reactor, onConnect)
         
     def onService(self, sslConn, peerKey, contactName, contactKeyID, incomingName):
         connectionId = self.service.appletServer.incoming.addIncoming(sslConn, peerKey)
+        
         def onAccept(err, sock, keyid):
-            global _ReceivingStreams
+            global _OpenedStreams
             if err < 0 :
                 try:
                     if sock is not None:
@@ -669,18 +661,20 @@ class Application:
                     logger().exception('onService.onAccept err=%d, keyid=%s' % (err, keyid))
                 notify().receive('', 'failed', keyid, err, 'error: ' + str(err))
                 return
-            if not _ReceivingStreams.has_key(keyid):
-                _ReceivingStreams[keyid] = []
+            if not _OpenedStreams.has_key(keyid):
+                _OpenedStreams[keyid] = []
             stream = TCPMessageStream(sock, self.reactor)
-            newReceiver = FileReceiver(self.reactor, keyid, stream)
-            _ReceivingStreams[keyid].append(newReceiver)
+            openedStream = OpenStream(self.reactor, keyid, stream)
+            _OpenedStreams[keyid].append(openedStream)
+            notify().streams()
+            
         def onConnect(connector, keyid):
             if connector.getError() != 0 :
                 notify().receive('', 'failed', keyid, None, 'error connecting to CSpace on local machine')
                 return
             sock = connector.getSock()
             CSpaceAcceptor(sock, connectionId, self.reactor, lambda e,s: onAccept(e, s, keyid))
-        # logger().info('onService contactName=%s' % contactName)
+            
         tcpConnect(('127.0.0.1', self.appletport), self.reactor, lambda c: onConnect(c, str(contactKeyID)))
     
     #------------------------------------------------------------------------------
@@ -922,6 +916,7 @@ def controlCommand(command, data=''):
 
 class Notifier():
     def sent(self, keyID, filename, transferID, status, err=None, msg=''):
+        # logger().info('notify.sent %s' % str((keyID, filename, transferID, status, msg)))
         controlCommand('sent', (str(keyID), filename, transferID, status, err, '"%s"' % msg))
 
     def receive(self, filename, status, peer, err=None, msg=''):
@@ -929,6 +924,15 @@ class Notifier():
 
     def contact_status(self, name, status):
         controlCommand('contact', (name, status))
+        
+    def streams(self):
+        global _OpenedStreams
+        lst = []
+        for keyID, streams in _OpenedStreams.items():
+            for stream in streams:
+                lst.append(keyID+':'+stream.state+':'+str(stream.totalBytesSent)+':'+str(stream.totalBytesReceived))
+        logger().info('%s' % (str(lst)))
+        controlCommand('streams', (lst,))
 
 def notify():
     global _Notifier
@@ -1038,74 +1042,75 @@ class CSpaceAcceptor( object ) :
             self.op.notify( 0, sock )
 
 #------------------------------------------------------------------------------ 
-# need to send files inside same stream
-# close stream if only connection error or connection lost
-class FileSender(object):
-    CHUNK_SIZE = (2 ** 16) - 256
 
-    def __init__(self, reactor, stream, peer):
-        self.reactor = reactor
-        self.stream = stream
-        self.file = None
-        self.filename = None
-        self.transferID = None
-        self.description = None
-        self.peer = peer
-        self.waitOp = None
-        self.currentOp = None
+class InboxFile():
+    def __init__(self, parent, length):
+        global _TempLocation
+        self.parent = parent
+        self.length = length
+        self.bytesReceived = 0
+        self.fd, self.filename = tempfile.mkstemp('', '', _TempLocation)
+
+    def closeFile(self):
+        os.fsync(self.fd)
+        os.close(self.fd)
+
+    def dataReceived(self, data):        
+        os.write(self.fd, data)
+        self.bytesReceived += len(data)
+        self.parent.totalBytesReceived += len(data)
+        if self.bytesReceived == self.length:
+            self.closeFile()
+            notify().receive(self.filename, 'finished', self.parent.peer)
+            self.parent.clearInboxFile()
+            notify().streams()
+        if self.bytesReceived > self.length:
+            self.closeFile()
+            notify().receive(self.filename, 'failed', self.parent.peer, None, 'incorrect file size')
+            self.parent.clearInboxFile()
+            notify().streams()
+        self.parent.sendData(struct.pack("!Q", self.bytesReceived))
+        
+class OutboxFile():
+    def __init__(self, parent, filename, transferID, description):
+        self.parent = parent
+        self.filename = filename
+        self.transferID = transferID
+        self.description = description
         self.bytesSent = 0
-        self.length = 0
-        self.totalBytesSent = 0
-        self.lastPacketTime = 0
-        self.timeout = 0
-        self.state = 'ready'
-        self.ready = time.time()
-        self.stream.setInputCallback(self.dataReceived)
-        self.stream.setCloseCallback(self.connectionLost)
-        self.stream.setErrorCallback(self.connectionError)
-        self.stream.enableRead(True)
-        # self.doWaitNewFiles()
-        # logger().info('FileSender.__init__ peer=%s, %s' % (self.peer, str(self.stream.getSock().getsockname())))
-
-    # def __del__(self):
-        # logger().info('FileSender.__dell__ peer=%s totalSent=%d state=%s' % (self.peer, self.totalBytesSent, self.state))
-
-    def newFile(self, filename, transferID, description):
-        self.filename, self.transferID, self.description = (filename, transferID, description)
+        self.waitOp = None
         try:
             self.file = file(self.filename, 'rb')
             self.file.seek(0, 2)
             self.length = self.file.tell()
             self.file.seek(0)
         except:
-            self.state = 'error'
-            self.failed('failed', 'error reading input file')
-            self.close_stream()
+            self.failed('error reading input file')
             return
         try:
-            self.stream.sendMessage(struct.pack("!Q", self.length))
+            self.parent.sendData(struct.pack("!Q", self.length))
         except:
-            self.state = 'lost'
-            self.failed('failed', 'error writing data, seems connection were lost')
-            self.close_stream()
+            self.failed('error writing data, seems connection were lost')
             return
-        self.bytesSent = 0
         self.timeout = max( int(self.length/SENDING_SPEED_LIMIT), 10)  
-        self.state = 'sending'
         self.doSend()
 
     def doSend(self):
         if self.file is None:
-            logger().critical('file is None: ' + str((self.peer, self.state, self.transferID, self.filename, self. self.bytesSent, self.totalBytesSent)))
+            self.failed('file is None')
             return
-        chunk = self.file.read(self.CHUNK_SIZE)
+        chunk = self.file.read(CHUNK_SIZE)
         if not chunk:
-            self.state = 'waiting'
             self.doWaitFinishSending()
             return
-        self.stream.sendMessage(chunk)
+        if len(chunk) == 8:
+            self.parent.sendData(chunk[:4])
+            self.parent.sendData(chunk[4:])
+        else:
+            self.parent.sendData(chunk)
         self.bytesSent += len(chunk)
-        self.currentOp = self.reactor.callLater(0, self.doSend)
+        self.parent.totalBytesSent += len(chunk)
+        self.currentOp = self.parent.reactor.callLater(0, self.doSend)
 
     def doWaitFinishSending(self):
         #all data was sent
@@ -1114,165 +1119,158 @@ class FileSender(object):
         #if we did not receive any response
         #we assume the connection was lost
         def sent_timeout():
-            del self.waitOp
             self.waitOp = None
-            self.state = 'ready'
-            self.ready = time.time()
-            self.failed('timeout', 'other side not responding')
-        self.waitOp = self.reactor.callLater(self.timeout, sent_timeout)
-
-    def dataReceived(self, data):
-        self.lastPacketTime = time.time()
-        bytesReceived ,= struct.unpack("!Q", data[:8])
+            self.failed('timeout sending, other side not responding')
+        self.waitOp = self.parent.reactor.callLater(self.timeout, sent_timeout)
+    
+    def lengthReceived(self, bytesReceived):
         if bytesReceived == self.length:
-            self.state = 'ready'
-            self.ready = time.time()
             self.done()
-            # self.doWaitNewFiles()
             return
         if bytesReceived > self.length:
-            self.state = 'ready'
-            self.ready = time.time()
-            self.failed('failed', 'data did not sent correctly')
-            # self.doWaitNewFiles()
-
-    def connectionLost(self):
-        #print 'FileSender.connectionLost'
-        st = self.state 
-        self.state = 'lost'
-        if st in ['sending', 'waiting']:
-            self.failed('failed', 'connection lost while sending')
-        self.close_stream()
-
-    def connectionError(self, err, errMsg):
-#        print 'FileSender.connectionError', errMsg
-        st = self.state
-        self.state = 'error'
-        if st in ['sending', 'waiting']:
-            self.failed('failed', 'connection error while sending: ' + errMsg)
-        self.close_stream()
-
+            self.failed('data did not sent correctly')
+    
     def done(self):
-        self.totalBytesSent += self.bytesSent
-        self.close_file()
+        self.closeFile()
         if self.transferID is None or self.filename is None:
-            logger().critical('sending finished with some error: ' + str((self.peer, self.state, self.transferID, self.filename, self. self.bytesSent, self.totalBytesSent)))
-        notify().sent(self.peer, self.filename, self.transferID, 'finished')
-        self.close_wait_op()
-        self.clear_state()
+            logger().critical('sending finished with some error: ' + str((self.parent.peer, self.transferID, self.filename, self.bytesSent)))
+        notify().sent(self.parent.peer, self.filename, self.transferID, 'finished')
+        self.parent.clearOutboxFile()
+        notify().streams()
 
-    def failed(self, status, msg):
-        self.close_file()
-        notify().sent(self.peer, self.filename, self.transferID, status, None, msg)
-        self.close_wait_op()
-        self.clear_state()
+    def failed(self, msg):
+        self.closeFile()
+        if self.transferID is None or self.filename is None:
+            logger().critical('sending failed with some error: ' + str((self.parent.peer, self.transferID, self.filename, self.bytesSent)))
+        notify().sent(self.parent.peer, self.filename, self.transferID, 'failed', None, msg)
+        self.parent.clearOutboxFile()
+        self.parent.connectionLost()
+        notify().streams()
 
-    def close_wait_op(self):
+    def closeFile(self):
         if self.waitOp is not None:
             self.waitOp.cancel()
             self.waitOp = None
-
-    def close_file(self):
         try:
             self.file.close()
         except:
             pass
         
-    def clear_state(self):
-        self.file = None
-        self.filename = None
-        self.transferID = None
-        self.description = None
-
-    def close_stream(self):
-        global _SendingStreams
-        if self.state in ['sending', 'waiting']:
-            self.failed('failed', 'closing sending stream')
-        # self.close_wait_op()
-        # self.close_file()
-        # self.clear_state()
-        if not self.stream.stream.shutdownFlag:
-            self.stream.close()
-        if _SendingStreams.has_key(self.peer) and self in _SendingStreams[self.peer]:
-            _SendingStreams[self.peer].remove(self)
-        # logger().info('FileSender.close_stream with %s, more streams: %d' % (self.peer, len(_SendingStreams[self.peer])))
-
-
-class FileReceiver(object):
+class OpenStream(object):
     def __init__(self, reactor, peer, stream):
         self.reactor = reactor
         self.peer = peer
         self.stream = stream
-        self.bytesReceived = 0
+        self.outboxFile = None
+        self.inboxFile = None
         self.totalBytesReceived = 0
-        self.length = 0
-        self.fd = 0
-        self.filename = None
-        self.gotLength = False
+        self.totalBytesSent = 0
+        self.incomingFlag = False
         self.state = 'ready'
-        self.ready = time.time()
         self.stream.setInputCallback(self.dataReceived)
         self.stream.setCloseCallback(self.connectionLost)
         self.stream.setErrorCallback(self.connectionError)
         self.stream.enableRead(True)
-        # logger().info('FileReceiver.__init__ peer=%s, %s' % (self.peer, str(self.stream.getSock().getsockname())))
+        logger().info('OpenStream.__init__ peer=%s %s' % (self.peer, str(self.stream.getSock().getsockname())))
 
-    # def __del__(self):
-        # logger().info('FileReceiver.__dell__ peer=%s totalReceived=%d state=%s' % (self.peer, self.totalBytesReceived, self.state))
+    def __del__(self):
+        logger().info('OpenStream.__del__ peer=%s' % (self.peer))
 
-    def openFile(self):
-        global _TempLocation
-        self.fd, self.filename = tempfile.mkstemp('', '', _TempLocation)
+    def closeStream(self):
+        global _OpenedStreams
+        if self.inboxFile:
+            self.inboxFile.closeFile()
+            notify().receive(self.inboxFile.filename, 'failed', self.peer, None, 'connection closed')
+            self.clearInboxFile()
+        if self.outboxFile:
+            self.outboxFile.closeFile()
+            notify().sent(self.peer, self.outboxFile.filename, self.outboxFile.transferID, 'failed', None, 'connection closed')
+            self.clearOutboxFile()
+        if self.stream:
+            if not self.stream.stream.shutdownFlag:
+                self.stream.close()
+            self.stream.setInputCallback(None)
+            self.stream.setCloseCallback(None)
+            self.stream.setErrorCallback(None)
+            self.stream.enableRead(False)
+            self.stream = None
+        if _OpenedStreams.has_key(self.peer) and self in _OpenedStreams[self.peer]:
+            _OpenedStreams[self.peer].remove(self)
+        self.reactor = None
+        # logger().info('OpenStream.closeStream with %s, more streams: %d' % (self.peer, len(_OpenedStreams[self.peer])))
+        notify().streams()
 
-    def closeFile(self):
-        os.fsync(self.fd)
-        os.close(self.fd)
-        
-    def clearFile(self):
-        self.fd = None
-        self.filename = None
+    def sendData(self, data):
+        self.stream.sendMessage(data)
 
     def dataReceived(self, data):
-        if self.state == 'ready':
-            self.openFile()
-            self.length ,= struct.unpack("!Q", data[:8])
-            self.bytesReceived = 0
-            data = data[8:]
-            self.state = 'receiving'
-        os.write(self.fd, data)
-        self.bytesReceived += len(data)
-        self.stream.sendMessage(struct.pack("!Q", self.bytesReceived))
-        if self.bytesReceived == self.length:
-            self.closeFile()
-            self.totalBytesReceived += self.bytesReceived
-            self.state = 'ready'
-            self.ready = time.time()
-            notify().receive(self.filename, 'finished', self.peer)
-            self.clearFile()
+        # logger().info(str((len(data), self.totalBytesReceived, self.totalBytesSent)))
+        try:
+            if self.inboxFile is None and self.outboxFile is None:
+                # no receiving, not sending: this is total file length
+                length ,= struct.unpack("!Q", data[:8])
+                if length == 0:
+                    self.incomingFlag = True
+                else:
+                    self.incomingFlag = False
+                    self.inboxFile = InboxFile(self, length)
+                    if len(data) > 8:
+                        data = data[8:]
+                        self.inboxFile.dataReceived(data)
+            elif self.inboxFile is None and self.outboxFile:
+                # only sending: response with number of bytes received OR new inbox file length
+                # need to deal here to decide what is that new incoming file or not
+                lengthORreceived ,= struct.unpack("!Q", data[:8])
+                if lengthORreceived == 0:
+                    self.incomingFlag = True
+                elif self.incomingFlag:
+                    self.incomingFlag = False
+                    self.inboxFile = InboxFile(self, lengthORreceived)
+                    if len(data) > 8:
+                        data = data[8:]
+                        self.inboxFile.dataReceived(data)
+                else:
+                    self.outboxFile.lengthReceived(lengthORreceived)
+            elif self.inboxFile and self.outboxFile is None:
+                # only receiving: this is data packet
+                self.inboxFile.dataReceived(data)
+            else:
+                #sending and receiving at once: this is data packet or number of bytes received
+                if len(data) == 8:
+                    received ,= struct.unpack("!Q", data[:8])
+                    self.outboxFile.lengthReceived(received)
+                else:
+                    self.inboxFile.dataReceived(data)
+        except:
+            logger().exception('error in OpenStream.dataReceived')
+            self.connectionError(None, 'error when receiving data')
+            return
+                
+    def newFile(self, filename, transferID, description):
+        if self.outboxFile:
+            notify().sent(self.peer, self.filename, self.transferID, 'failed', None, 'stream is busy')
+            return
+        self.outboxFile = OutboxFile(self, filename, transferID, description)
+        self.state = 'sending'
+
+    def clearInboxFile(self):
+        del self.inboxFile
+        self.inboxFile = None
+        
+    def clearOutboxFile(self):
+        del self.outboxFile
+        self.outboxFile = None
+        self.state = 'ready'
 
     def connectionLost(self):
-        if self.state == 'receiving':
-            self.closeFile()
-            notify().receive(self.filename, 'failed', self.peer, None, 'connection lost')
-            self.clearFile()
-        self.close_stream()
+        # logger().info('connectionLost ' + self.peer)
+        self.closeStream()
         self.state = 'lost'
 
     def connectionError(self, err, errMsg):
-        if self.state == 'receiving':
-            self.closeFile()
-            notify().receive(self.filename, 'failed', self.peer, err, 'connection error: ' + errMsg)
-            self.clearFile()
-        self.close_stream()
+        # logger().info('connectionError ' + self.peer)
+        self.closeStream()
         self.state = 'error'
-
-    def close_stream(self):
-        global _ReceivingStreams
-        if not self.stream.stream.shutdownFlag:
-            self.stream.close()
-        if _ReceivingStreams.has_key(self.peer) and self in _ReceivingStreams[self.peer]:
-            _ReceivingStreams[self.peer].remove(self)
-        # logger().info('FileReceiver.close_stream with %s, more streams: %d' % (self.peer, len(_ReceivingStreams[self.peer])))
 
 #------------------------------------------------------------------------------ 
 
@@ -1359,9 +1357,11 @@ def initLog(logLevel=0, logFilename='cspace.log', logWriteMode='wb', use_logging
         return
     if use_logging_module:
         if debug:
-            logging.basicConfig(level=logLevel, stream=CSpace_stdout(), format='%(name)30s    %(levelname)5s   %(message)s', )
+            logging.basicConfig(level=logLevel, stream=CSpace_stdout(), 
+                                format='%(asctime)s  %(name)30s  %(levelname)5s  %(message)s', )
         else:
-            logging.basicConfig(level=logLevel, filename=logFilename, filemode=logWriteMode, format='%(name)30s    %(levelname)5s   %(message)s', )
+            logging.basicConfig(level=logLevel, filename=logFilename, filemode=logWriteMode, 
+                                format='%(asctime)s  %(name)30s  %(levelname)5s  %(message)s', )
         _AppLogger = logging.getLogger('dhn_cspace')
     else:
         if not debug:

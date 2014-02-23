@@ -64,6 +64,8 @@ _CentralStatusDict = {}
 _LoopSendBandwidthReportsTask = None
 _MarketBids = None
 _MarketOffers = None
+_LastRequestSuppliers = 0
+_LastRequestCustomers = 0
 
 #------------------------------------------------------------------------------ 
 
@@ -167,6 +169,8 @@ def SendIdentity(doAck=False):
     ret = send2central(commands.Identity(), data, doAck, misc.getLocalID())
     return ret
 
+#------------------------------------------------------------------------------ 
+
 # Say what eccmap we are using for recovery info
 # How many suppliers we want (probably same as used by eccmap but just in case)
 # Say how much disk we are donating now
@@ -219,6 +223,8 @@ def SendRequestSettings(doAck=False):
     dhnio.Dprint(4, 'central_service.SendRequestSettings')
     return send2central(commands.RequestSettings(), '', doAck)
 
+#------------------------------------------------------------------------------ 
+
 def SendReplaceSupplier(numORidurl, doAck=False):
     if isinstance(numORidurl, str):
         idurl = numORidurl
@@ -258,11 +264,25 @@ def SendReplaceCustomer(numORidurl, doAck=False):
     events.notify('central_service', 'sent request to dismiss customer %s' % nameurl.GetName(idurl))
     return ret
 
+#------------------------------------------------------------------------------ 
+
 def SendRequestSuppliers(data = '', doAck=False):
+    global _LastRequestSuppliers
+    dt = time.time() - _LastRequestSuppliers
+    if dt < 60 * 10:
+        dhnio.Dprint(4, "central_service.SendRequestSuppliers skip, last request was %d minutes ago" % (dt/60.0))
+        return
+    _LastRequestSuppliers = time.time()
     dhnio.Dprint(4, "central_service.SendRequestSuppliers")
     return send2central(commands.RequestSuppliers(), data, doAck)
 
 def SendRequestCustomers(data = '', doAck=False):
+    global _LastRequestCustomers
+    dt = time.time() - _LastRequestCustomers
+    if dt < 60 * 10:
+        dhnio.Dprint(4, "central_service.SendRequestCustomers skip, last request was %d minutes ago" % (dt/60.0))
+        return
+    _LastRequestCustomers = time.time()
     dhnio.Dprint(4, "central_service.SendRequestCustomers")
     return send2central(commands.RequestCustomers(), data, doAck)
 
@@ -638,10 +658,16 @@ def ReceiveBandwidthAck(packet):
 
 #-------------------------------------------------------------------------------
 
+# possible values are: 
+# '!' - ONLINE, 'x' - OFFLINE, '~' - was connected in last hour, '?' - unknown
 def get_user_status(idurl):
-    # possible values are: '!' - ONLINE, 'x' - OFFLINE, '~' - was connected in last hour, '?' - unknown
     global _CentralStatusDict
     return _CentralStatusDict.get(idurl, '?') 
+
+def clear_users_statuses(users_list):
+    global _CentralStatusDict
+    for idurl in users_list:
+        _CentralStatusDict.pop(idurl, None)
      
 #------------------------------------------------------------------------------ 
 

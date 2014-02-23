@@ -34,6 +34,7 @@ import contact_status
 import backup_monitor
 
 _DataSender = None
+_ShutdownFlag = False
 
 #------------------------------------------------------------------------------ 
 
@@ -86,10 +87,20 @@ class DataSender(automat.Automat):
         return io_throttle.OkToSend(remoteID)
     
     def doScanAndQueue(self, arg):
-        # dhnio.Dprint(10, 'data_sender.doScanAndQueue')
+        global _ShutdownFlag
+        dhnio.Dprint(10, 'data_sender.doScanAndQueue')
+        log = open(os.path.join(settings.LogsDir(), 'data_sender.log'), 'w')
+        log.write('doScanAndQueue %s\n' % time.asctime())
+        if _ShutdownFlag:
+            log.write('doScanAndQueue _ShutdownFlag is True\n')
+            self.automat('scan-done')
+            log.flush()
+            log.close()
+            return
         if '' not in contacts.getSupplierIDs():
             for backupID in misc.sorted_backup_ids(backup_matrix.local_files().keys(), True):
                 packetsBySupplier = backup_matrix.ScanBlocksToSend(backupID)
+                log.write('%s\n' % packetsBySupplier)
                 for supplierNum in packetsBySupplier.keys():
                     supplier_idurl = contacts.getSupplierID(supplierNum)
                     if not supplier_idurl:
@@ -104,13 +115,18 @@ class DataSender(automat.Automat):
                             dhnio.Dprint(2, 'data_sender.doScanAndQueue WARNING ?supplierNum? %s for %s' % (packetID, backupID))
                             continue
                         if io_throttle.HasPacketInSendQueue(supplier_idurl, packetID):
+                            log.write('%s in the send queue to %s\n' % (packetID, supplier_idurl))
                             continue
                         if not io_throttle.OkToSend(supplier_idurl):
+                            log.write('ok to send %s ? - NO!\n' % supplier_idurl)
                             continue
-                        if len(transport_control.transfers_by_idurl(supplier_idurl)) > 3:
+                        tranByiID = transport_control.transfers_by_idurl(supplier_idurl)
+                        if len(tranByiID) > 3:
+                            log.write('transfers by %s: %d\n' % (supplier_idurl, len(tranByiID)))
                             continue
                         filename = os.path.join(settings.getLocalBackupsDir(), packetID)
                         if not os.path.isfile(filename):
+                            log.write('%s is not file\n' % filename)
                             continue
                         io_throttle.QueueSendFile(
                             filename, 
@@ -119,8 +135,11 @@ class DataSender(automat.Automat):
                             misc.getLocalID(), 
                             self.packetAcked, 
                             self.packetFailed)
+                        log.write('io_throttle.QueueSendFile %s\n' % packetID)
                         # dhnio.Dprint(6, '  %s for %s' % (packetID, backupID))
         self.automat('scan-done')
+        log.flush()
+        log.close()
         
     def doPrintStats(self, arg):
         if dhnio.Debug(18):
@@ -183,7 +202,9 @@ def statistic():
         return {}
     return _DataSender.statistic
     
-        
+def SetShutdownFlag():
+    global _ShutdownFlag
+    _ShutdownFlag = True
         
         
         

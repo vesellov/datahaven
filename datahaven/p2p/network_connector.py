@@ -103,7 +103,7 @@ class NetworkConnector(Automat):
                 self.doDropCounters(arg)
                 self.doCheckNetworkInterfaces(arg)
                 self.Disconnects=0
-                self.doRestartTransportUDP(arg)
+                self.doRestart(arg)
             elif ( event == 'timer-5sec' or event == 'connection-failed' or event == 'connection-done' ) and not self.isConnectionAlive(arg) :
                 self.state = 'NETWORK?'
                 self.doDropCounters(arg)
@@ -275,8 +275,10 @@ class NetworkConnector(Automat):
     def doRememberInternetState(self, arg):
         self.last_internet_state = arg
 
-    def doRestartTransportUDP(self, arg):
+    def doRestart(self, arg):
         try:
+            import lib.transport_control
+            lib.transport_control.cancel_all_transfers()
             if transport_control._TransportUDPEnable: 
                 import lib.transport_udp
                 lib.transport_udp.A('reconnect')

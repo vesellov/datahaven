@@ -177,7 +177,7 @@ class TransportUDP(automat.Automat):
                 self.doRestartUDPSession(arg)
             elif event == 'child-request-recreate' :
                 self.doRecreateUDPSession(arg)
-            elif event == 'recognize-remote-id' :
+            elif event == 'recognize-remote-id' or event == 'detect-remote-ip':
                 self.doCloseDuplicatedUDPSession(arg)
             elif event == 'cancel-file' :
                 self.doClientCancelFile(arg)
@@ -408,11 +408,14 @@ class TransportUDP(automat.Automat):
             dhnio.Dprint(6, 'transport_udp.doCloseDuplicatedUDPSession WARNING current session is None index=%d' % index)
             return
         for sess in transport_udp_session.sessions():
-            if sess.remote_idurl is not None and sess.remote_idurl == idurl and sess.index != index:
+            if sess.index == index:
+                continue
+            if sess.remote_idurl is not None and sess.remote_idurl == idurl:
                 self.addRedirection(sess.remote_address, current_session.remote_address)
                 sess.automat('shutdown')
-                dhnio.Dprint(8, 'transport_udp.doCloseDuplicatedUDPSession shutdown to %s with [%s]' % (sess.name, nameurl.GetName(idurl)))
-                        
+                dhnio.Dprint(8, 'transport_udp.doCloseDuplicatedUDPSession for [%s], redirect to %s, send "shutdown" to %s' % (
+                    nameurl.GetName(idurl), current_session.name, sess.name))
+
     def doServerOutboxFile(self, arg):
         address = arg[0]
         filename, fast, description = arg[1]

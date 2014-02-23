@@ -45,6 +45,7 @@ _ConnectionsCounter = 0
 _StartedConnections = {}
 _SingleConnectionHosts = set()
 _InternalPort = 7771
+_RedirectionsMap = {}
 
 #------------------------------------------------------------------------------
 
@@ -82,18 +83,15 @@ def sendsingle(filename, host, port, do_status_report=True, result_defer=None, d
 
 
 def send(filename, host, port, do_status_report=True, result_defer=None, description=''):
-    global _SendControlFunc
     global _OpenedConnections
     global _StartedConnections
-    # global _SingleConnectionHosts
+    global _RedirectionsMap
     remoteaddress = (host, int(port))
-    # if remoteaddress[0] in _SingleConnectionHosts:
-    #     sender = SingleSendingFactory(
-    #         filename, host, int(port), result_defer=result_defer, do_status_report=do_status_report, 
-    #         send_control_func=None, # (send_control_func or _SendControlFunc),
-    #         description=description)
-    #     reactor.connectTCP(host, int(port), sender)
-    #     return
+#    redirected = _RedirectionsMap.get(remoteaddress, None)
+#    if redirected and redirected in _OpenedConnections:
+#        if len(_OpenedConnections[redirected]) > 0: 
+#            _OpenedConnections[redirected][0].sendfile(filename, do_status_report, result_defer, description)
+#            return
     if remoteaddress in _StartedConnections:
         _StartedConnections[remoteaddress].addoutboxfile(filename, do_status_report, result_defer, description)
         return
@@ -154,7 +152,7 @@ def receive(port, receive_control_func=None):
     def _loop(port, result, count, receive_control_func):
         if count > 3:
             dhnio.Dprint(1, "transport_tcp.receive WARNING port %s is busy!" % str(port))
-            result.errback(None)
+            result.callback(None)
             return
         l = _try_receiving(port, count, receive_control_func)
         if l is not None:
@@ -461,14 +459,14 @@ class TCPFileSender(basic.FileSender):
         self.result_defer = result_defer
         self.description = description
         self.sentBytes = 0
-        peer = self.protocol.transport.getPeer()
+        self.peer = self.protocol.remoteaddress # self.protocol.transport.getPeer()
         self.transfer_id = _RegisterTransferFunc(
-            'send', (peer.host, int(peer.port)), self.getSentBytes, filename, sz, description)
+            'send', self.peer, self.getSentBytes, filename, sz, description)
         _ByTransferID[self.transfer_id] = self.protocol
-        dhnio.Dprint(14, 'transport_tcp.TCPFileSender.init length=%d transfer_id=%s' % (self.sz, self.transfer_id))
+        # dhnio.Dprint(14, 'transport_tcp.TCPFileSender.init length=%d transfer_id=%s' % (self.sz, self.transfer_id))
 
-    def __del__(self):
-        dhnio.Dprint(14, 'transport_tcp.TCPFileSender.del length=%d transfer_id=%s' % (self.sz, self.transfer_id))
+    # def __del__(self):
+    #     dhnio.Dprint(14, 'transport_tcp.TCPFileSender.del length=%d transfer_id=%s' % (self.sz, self.transfer_id))
 
     def getSentBytes(self):
         return self.sentBytes
@@ -487,14 +485,14 @@ class TCPFileReceiver():
         self.receivedBytes = 0
         self.length = length
         self.fd, self.filename = tmpfile.make("tcp-in")
-        peer = self.protocol.transport.getPeer()
+        self.peer = self.protocol.remoteaddress # self.protocol.transport.getPeer()
         self.transfer_id = _RegisterTransferFunc(
-            'receive', (peer.host, int(peer.port)), self.getReceivedBytes, self.filename, -1)
+            'receive', self.peer, self.getReceivedBytes, self.filename, -1)
         _ByTransferID[self.transfer_id] = self.protocol
-        dhnio.Dprint(14, 'transport_tcp.TCPFileReceiver.init length=%d transfer_id=%s' % (self.length, self.transfer_id))
+        # dhnio.Dprint(14, 'transport_tcp.TCPFileReceiver.init length=%d transfer_id=%s' % (self.length, self.transfer_id))
         
-    def __del__(self):
-        dhnio.Dprint(14, 'transport_tcp.TCPFileReceiver.del length=%d transfer_id=%s' % (self.length, self.transfer_id))
+    # def __del__(self):
+    #     dhnio.Dprint(14, 'transport_tcp.TCPFileReceiver.del length=%d transfer_id=%s' % (self.length, self.transfer_id))
 
     def getReceivedBytes(self):
         return self.receivedBytes
@@ -524,7 +522,7 @@ class TCPFileReceiver():
             os.close(self.fd)
         except:
             dhnio.DprintException()
-        _ReceiveStatusFunc(self.filename, result, 'tcp', self.protocol.transport.getPeer(), reason)
+        _ReceiveStatusFunc(self.filename, result, 'tcp', self.peer, reason)
         
     def eof(self):
         self.close('finished', 'file received successfully')    
@@ -585,6 +583,7 @@ class TCPProtocol(protocol.Protocol):
     def connectionLost(self, reason):
         global _OpenedConnections
         global _ConnectionsCounter
+        global _RedirectionsMap
         dhnio.Dprint(14, 'transport_tcp.TCPProtocol.connectionLost with %s' % str(self.transport.getPeer()))
         self.shutdown(reason)
         if self.remoteaddress in _OpenedConnections:
@@ -594,6 +593,12 @@ class TCPProtocol(protocol.Protocol):
                 pass
             if len(_OpenedConnections[self.remoteaddress]) == 0:
                 _OpenedConnections.pop(self.remoteaddress)
+#        if self.remoteaddress in _RedirectionsMap:
+#            _RedirectionsMap.pop(self.remoteaddress)
+#        redirects = _RedirectionsMap.keys()
+#        for oldaddress in redirects:
+#            if _RedirectionsMap[oldaddress] == self.remoteaddress:
+#                _RedirectionsMap.pop(oldaddress)
         _ConnectionsCounter -= 1
         # dhnio.Dprint(16, '    %s' % str(_OpenedConnections))
         # dhnio.Dprint(16, '    %s' % str(_StartedConnections))
@@ -603,15 +608,14 @@ class TCPProtocol(protocol.Protocol):
         if self.fileSender is not None:
             self.fileSender.file = None
             self.fileSender.stopProducing()
-        self.transport.abortConnection()
-        # print dir(self.transport)
-#        if self.type == 'server':
-#            self.transport.abortConnection()
-#        else:
-#            self.transport.loseConnection()
+        try:
+            self.transport.abortConnection()
+        except:
+            self.transport.loseConnection()
     
     def dataReceived(self, data):
         global _OpenedConnections
+        global _RedirectionsMap
         if self.remoteinternalport is None:
             try:
                 _data = data
@@ -632,10 +636,12 @@ class TCPProtocol(protocol.Protocol):
                 _OpenedConnections[self.remoteaddress].remove(self)
                 if len(_OpenedConnections[self.remoteaddress]) == 0:
                     _OpenedConnections.pop(self.remoteaddress)
+                old = self.remoteaddress
                 self.remoteaddress = (self.transport.getPeer().host, self.remoteinternalport)
                 if self.remoteaddress not in _OpenedConnections:
                     _OpenedConnections[self.remoteaddress] = []
                 _OpenedConnections[self.remoteaddress].append(self)
+                # _RedirectionsMap[old] = self.remoteaddress
                 dhnio.Dprint(12, 'transport_tcp.TCPProtocol.dataReceived %s internal port changed %d->%d' % (
                     self, oldport, self.remoteinternalport))
         if not data:
@@ -666,7 +672,7 @@ class TCPProtocol(protocol.Protocol):
             if self.remoteaddress in _OpenedConnections:
                 if len(_OpenedConnections[self.remoteaddress]) > 1:
                     if self in _OpenedConnections[self.remoteaddress]:
-                        dhnio.Dprint(12, 'transport_tcp.TCPProtocol.finishedTransfer want to close extra connection to %s' % (str(self.remoteaddress)))
+                        dhnio.Dprint(14, 'transport_tcp.TCPProtocol.finishedTransfer want to close extra connection to %s' % (str(self.remoteaddress)))
                         self.disconnect()
                         return
             if opened_connections_count() > 200:
@@ -686,18 +692,20 @@ class TCPProtocol(protocol.Protocol):
                 if time.time() - self.connected > 60.0:
                     # _SingleConnectionHosts.add(self.remoteaddress[0])
                     if do_status_report:
-                        _SendStatusFunc(self.remoteaddress, filename, 'failed', 'tcp', None, 'remote peer not responding')
+                        reactor.callLater(0, _SendStatusFunc, self.remoteaddress, filename, 'failed', 'tcp', None, 'remote peer not responding')
                     if result_defer is not None:
                         if not result_defer.called:
                             result_defer.errback(Exception('failed'))
+                    dhnio.Dprint(14, 'transport_tcp.TCPProtocol.sendfile connection idle, disconnect with %s' % (str(self.remoteaddress)))        
                     self.disconnect()
                     return
         if not os.path.isfile(filename):
             if do_status_report:
-                _SendStatusFunc(self.remoteaddress, filename, 'failed', 'tcp', None, 'file not exist')
+                reactor.callLater(0, _SendStatusFunc, self.remoteaddress, filename, 'failed', 'tcp', None, 'file not exist')
             if result_defer is not None:
                 if not result_defer.called:
                     result_defer.errback(Exception('failed'))
+            dhnio.Dprint(14, 'transport_tcp.TCPProtocol.sendfile sending file not exist, disconnect with %s' % (str(self.remoteaddress)))
             self.disconnect()
             return
         try:
@@ -705,10 +713,11 @@ class TCPProtocol(protocol.Protocol):
         except:
             dhnio.DprintException()
             if do_status_report:
-                _SendStatusFunc(self.remoteaddress, filename, 'failed', 'tcp', None, 'error opening file')
+                reactor.callLater(0, _SendStatusFunc, self.remoteaddress, filename, 'failed', 'tcp', None, 'error opening file')
             if result_defer is not None:
                 if not result_defer.called:
                     result_defer.errback(Exception('failed'))
+            dhnio.Dprint(14, 'transport_tcp.TCPProtocol.sendfile reading file size ERROR, disconnect with %s' % (str(self.remoteaddress)))
             self.disconnect()
             return
         self.outbox.append((filename, sz, do_status_report, result_defer, description))  
@@ -730,6 +739,7 @@ class TCPProtocol(protocol.Protocol):
             if result_defer is not None:
                 if not result_defer.called:
                     result_defer.errback(Exception('failed'))
+            dhnio.Dprint(14, 'transport_tcp.TCPProtocol.sendfile opening file ERROR, disconnect with %s' % (str(self.remoteaddress)))
             self.disconnect()
             return
         self.transport.write('0 length %d ' % sz)
@@ -744,8 +754,8 @@ class TCPProtocol(protocol.Protocol):
         global _SendStatusFunc
         global _OpenedConnections
         # global _SingleConnectionHosts
-        dhnio.Dprint(14, 'transport_tcp.TCPProtocol.finishedTransfer host=%s file=%s' % (
-            str((self.transport.getPeer().host, int(self.transport.getPeer().port))), self.fileSender.filename,))
+        # dhnio.Dprint(14, 'transport_tcp.TCPProtocol.finishedTransfer host=%s file=%s' % (
+        #     str((self.transport.getPeer().host, int(self.transport.getPeer().port))), self.fileSender.filename,))
         try:
             self.fileSender.inputfile.close()
         except:
@@ -767,10 +777,10 @@ class TCPProtocol(protocol.Protocol):
             self.disconnect()
             return
         if self.singleconnection or self.remoteinternalport is None:
+            dhnio.Dprint(14, 'transport_tcp.TCPProtocol.finishedTransfer singleconnection=%s remoteinternalport=%s, disconnect with %s' % (
+                self.singleconnection, self.remoteinternalport, str(self.remoteaddress)))
             self.transport.disconnect()
             # _SingleConnectionHosts.add(self.remoteaddress[0])
-            dhnio.Dprint(14, 'transport_tcp.TCPProtocol.finishedTransfer singleconnection=%s remoteinternalport=%s' % (
-                self.singleconnection, self.remoteinternalport))
         else:
             reactor.callLater(0, self.processoutbox)
 
@@ -780,8 +790,8 @@ class TCPProtocol(protocol.Protocol):
         global _ByTransferID
         global _OpenedConnections
         # global _SingleConnectionHosts
-        dhnio.Dprint(14, 'transport_tcp.TCPProtocol.transferFailed NETERROR host=%s file=%s error=%s' % (
-            str((self.transport.getPeer().host, int(self.transport.getPeer().port))), self.fileSender.filename, str(err.getErrorMessage())))
+        # dhnio.Dprint(14, 'transport_tcp.TCPProtocol.transferFailed NETERROR host=%s file=%s error=%s' % (
+        #     str((self.transport.getPeer().host, int(self.transport.getPeer().port))), self.fileSender.filename, str(err.getErrorMessage())))
         try:
             self.fileSender.inputfile.close()
         except:
@@ -803,10 +813,10 @@ class TCPProtocol(protocol.Protocol):
             self.disconnect()
             return
         if self.singleconnection or self.remoteinternalport is None:
+            dhnio.Dprint(14, 'transport_tcp.TCPProtocol.transferFailed singleconnection=%s remoteinternalport=%s, disconnect with %s' % (
+                self.singleconnection, self.remoteinternalport, str(self.remoteaddress)))
             self.transport.disconnect()
             # _SingleConnectionHosts.add(self.remoteaddress[0])
-            dhnio.Dprint(14, 'transport_tcp.TCPProtocol.transferFailed singleconnection=%s remoteinternalport=%s' % (
-                self.singleconnection, self.remoteinternalport))
         else:
             reactor.callLater(0, self.processoutbox)
 

@@ -147,8 +147,8 @@ class LogPage(resource.Resource):
                 color = 'purple'
                 textcolor = 'white'
             if s.find('WARNING') > 0:
-                color = 'blue'
-                textcolor = 'white'
+                color = '#FFFC75'
+                textcolor = 'black'
             if s.find('ERROR') > 0:
                 color = 'red'
                 textcolor = 'white'
@@ -158,13 +158,22 @@ class LogPage(resource.Resource):
             if s.find('Exception:') > 0:
                 color = 'red'
                 textcolor = 'white'
-            if s.find('] <<< ') > 0:
-                color = '#ffffbb'
+            if s.find(' <<< ') > 0:
+                color = '#B2B2FF'
                 textcolor = 'black'
-            if s.find('] >>> ') > 0:
-                color = '#bbffbb'
+            if s.find(' >>> ') > 0:
+                color = '#88ff88'
                 textcolor = 'black'
-                
+            if s.find(' << ') > 0:
+                color = '#ccccff'
+                textcolor = 'black'
+            if s.find(' >> ') > 0:
+                if s.find(' failed ') > 0:
+                    color = '#ffdddd'
+                else:
+                    color = '#ccffcc'
+                textcolor = 'black'
+            
             a = '%s'
             if color != '':
                 a = ('<font color="%s" style="BACKGROUND-COLOR:%s">' % (textcolor, color)) + '%s</font>'
@@ -172,6 +181,8 @@ class LogPage(resource.Resource):
                 a = ('<font color="%s">' % textcolor) + '%s</font>'
             if level <= 4:
                 a = '<b>%s</b>' % a
+
+            s = s.replace('>', '&gt;').replace('<', '&lt;')
 
             try:
                 out += a % str(s)

@@ -26,6 +26,7 @@ import misc
 import identitycache
 import tmpfile 
 import nameurl
+import contacts
 
 import automat
 
@@ -54,15 +55,15 @@ COMMANDS = {'PING':         'p:',
             'REPORT':       'r:',
             'ALIVE':        'a:',}
 
-BLOCK_SIZE_LEVELS = {   #0: 508,
-                        0: 1460,
-                        1: 2048,
-                        2: 3072,
-                        3: 4096,
-                        4: 5120,
-                        5: 6144,
-                        6: 7168,
-                        7: 8124,
+BLOCK_SIZE_LEVELS = {   0: 508,
+                        1: 1460,
+                        2: 2048,
+                        3: 3072,
+                        4: 4096,
+                        5: 5120,
+                        6: 6144,
+                        7: 7168,
+                        8: 8124,
                         }
 #sz = 508
 #BLOCK_SIZE_LEVELS = {   #0: 508,
@@ -118,7 +119,7 @@ def init(parent):
     dhnio.Dprint(4, 'transport_udp_session.init')
     _ParentObject = parent
     reactor.callLater(0, process_outbox_queue)
-    reactor.callLater(1, process_sending)
+    reactor.callLater(1, process_sessions)
     StartTimers()
 
    
@@ -165,9 +166,9 @@ def dhn_stun_server_response(datagram, address):
     myaddress = (myip, myport)
     peeraddress = (peerip, peerport)
     x, ip, port, x = misc.getLocalIdentity().getProtoParts('udp')
-    if ip and port and ip != myip and str(port) != str(myport):
-        network_address_changed(myaddress)
-        return
+    # if ip and port and ip != myip and str(port) != str(myport):
+        # network_address_changed(myaddress)
+        # return
     mappedaddress = peeraddress
     if identitycache.HasLocalIP(peeridurl):
         mappedaddress = (identitycache.GetLocalIP(peeridurl), peeraddress[1]) 
@@ -192,13 +193,13 @@ def network_address_changed(newaddress):
 #------------------------------------------------------------------------------ 
     
 class OutboxFile():
-    def __init__(self, peer, remote_idurl, file_id, filename, filesize, transfer_id, description=''):
+    def __init__(self, peer, remote_idurl, file_id, filename, filesize, description=''):
         global _RegisterTransferFunc
         self.peer = peer
         self.remote_idurl = remote_idurl
         self.file_id = file_id
         self.filename = filename
-        self.transfer_id = transfer_id
+        # self.transfer_id = transfer_id
         self.description = description
         self.size = filesize
         self.blocks = {} 
@@ -211,9 +212,12 @@ class OutboxFile():
         # self.failed_blocks = {}
         # self.has_failed_blocks = False
         self.started = time.time()
-        self.timeout = max( 2*int(self.size/settings.SendingSpeedLimit()), 10)
+        self.timeout = max( int(self.size/settings.SendingSpeedLimit()), 5)
+        self.transfer_id = None
         if _RegisterTransferFunc is not None:
-            _RegisterTransferFunc(callback=self.get_bytes_sent, transfer_id=self.transfer_id)
+            self.transfer_id = _RegisterTransferFunc('send', 
+                self.peer.remote_address, self.get_bytes_sent, self.filename, self.size, self.description)
+            # _RegisterTransferFunc(callback=self.get_bytes_sent, transfer_id=self.transfer_id)
         # dhnio.Dprint(6, 'transport_udp_session.OutboxFile [%d] to %s' % (self.file_id, nameurl.GetName(self.remote_idurl)))
 
     def close(self):
@@ -307,7 +311,6 @@ class OutboxFile():
 
 #------------------------------------------------------------------------------ 
 
-
 class InboxFile():
     def __init__(self, peer, file_id, num_blocks):
         global _RegisterTransferFunc
@@ -320,6 +323,8 @@ class InboxFile():
         self.bytes_extra = 0
         self.transfer_id = None
         self.started = time.time()
+        self.last_block_time = time.time()
+        self.block_timeout = 0
         if _RegisterTransferFunc is not None:
             self.transfer_id = _RegisterTransferFunc('receive', self.peer.remote_address, self.get_bytes_received, self.filename, -1, '')
         # dhnio.Dprint(6, 'transport_udp_session.InboxFile {%s} [%d] from %s' % (self.transfer_id, self.file_id, str(self.peer.remote_address)))
@@ -346,7 +351,8 @@ class InboxFile():
             self.bytes_received += len(block_data)
         else:
             self.bytes_extra += len(block_data)
-             
+        self.last_block_time = time.time()
+        self.block_timeout = max( int(len(block_data)/settings.SendingSpeedLimit()), 3) 
     
     def build(self):
         for block_id in xrange(len(self.blocks)):
@@ -354,6 +360,12 @@ class InboxFile():
         os.close(self.fd)
         # dhnio.Dprint(10, 'transport_udp_server.InboxFile.build [%s] file_id=%d, blocks=%d' % (
         #     os.path.basename(filename), file_id, len(self.incommingFiles[file_id])))
+
+    def is_timed_out(self):
+        if self.block_timeout == 0:
+            return False
+        return time.time() - self.last_block_time > self.block_timeout
+
     
 #------------------------------------------------------------------------------ 
 
@@ -369,7 +381,7 @@ class TransportUDPSession(automat.Automat):
         self.last_alive_packet_time = 0
         self.incommingFiles = {}
         self.outgoingFiles = {}
-        self.maxOutgoingFiles = 4
+        self.maxOutgoingFiles = 1
         self.receivedFiles = {}
         self.outbox_queue = []
         self.tries = 0
@@ -518,7 +530,16 @@ class TransportUDPSession(automat.Automat):
                 return
             if not self.incommingFiles.has_key(file_id):
                 if self.receivedFiles.has_key(file_id):
+                    if time.time() - self.receivedFiles[file_id] > 10:
+                        # we receive the file, but 10 seconds since that we still receive the acks
+                        # definitely something wrong - drop session 
+                        self.automat('shutdown')
+                        return 
                     self.sendDatagram(COMMANDS['REPORT'] + struct.pack('i', file_id) + struct.pack('i', block_id))
+                    return
+                if len(self.incommingFiles) >= 2 * self.maxOutgoingFiles:
+                    # too many incoming files - drop session
+                    self.automat('shutdown') 
                     return
                 self.incommingFiles[file_id] = InboxFile(self, file_id, num_blocks)
             inp_data = io.read()
@@ -527,9 +548,9 @@ class TransportUDPSession(automat.Automat):
                 return
             self.incommingFiles[file_id].input_block(block_id, inp_data) 
             self.sendDatagram(COMMANDS['REPORT'] + struct.pack('i', file_id) + struct.pack('i', block_id))
-            # dhnio.Dprint(10, 'transport_udp_session.doReceiveData [%d] (%d/%d) from %s' % (file_id, block_id, num_blocks, self.remote_address))
+            # dhnio.Dprint(12, 'transport_udp_session.doReceiveData [%d] (%d/%d) from %s, state=%s' % (file_id, block_id, num_blocks, self.remote_address, self.state))
             if len(self.incommingFiles[file_id].blocks) == num_blocks:
-                # dhnio.Dprint(2, 'transport_udp_session.doReceiveData new file [%d] (%d/%d) from %s' % (file_id, block_id, num_blocks, self.remote_address))
+                # dhnio.Dprint(12, 'transport_udp_session.doReceiveData new file [%d] (%d/%d) from %s' % (file_id, block_id, num_blocks, self.remote_address))
                 self.incommingFiles[file_id].build()
                 file_received(self.incommingFiles[file_id].filename, 'finished', 'udp', self.remote_address)
                 self.incommingFiles[file_id].close()   
@@ -564,6 +585,8 @@ class TransportUDPSession(automat.Automat):
         #--- GREETING
         elif cmd == 'GREETING':
             greeting_idurl = io.read()
+            dhnio.Dprint(12, 'transport_udp_session.doReceiveData GREETING "%s" from %s, remote_idurl=%s, remote_address=%s, state=%s' % (
+                greeting_idurl[:120], str(addr), self.remote_idurl, self.remote_address, self.state))
             if greeting_idurl:
                 if nameurl.UrlMake(parts=nameurl.UrlParse(greeting_idurl)) != greeting_idurl:
                     dhnio.Dprint(2, 'transport_udp_session.doReceiveData WARNING incorrect idurl=%s in GREETING packet from %s' % (greeting_idurl, self.name))
@@ -577,6 +600,12 @@ class TransportUDPSession(automat.Automat):
                     else:
                         if self.remote_idurl != greeting_idurl:
                             dhnio.Dprint(2, 'transport_udp_session.doReceiveData WARNING wrong idurl=%s in GREETING packet from %s' % (greeting_idurl, self.name))
+                    ident = contacts.getContact(greeting_idurl)
+                    if ident:
+                        udpip = ident.getIP('udp')
+                        if udpip:
+                            if udpip != addr[0]:
+                                parent().automat('detect-remote-ip', (self.index, self.remote_idurl))
                     self.sendDatagram(COMMANDS['ALIVE'])
             else:
                 dhnio.Dprint(2, 'transport_udp_session.doReceiveData WARNING did not found idurl in GREETING packet from %s, send PING again' % self.name)
@@ -602,8 +631,7 @@ class TransportUDPSession(automat.Automat):
         file_ids_to_remove = self.outgoingFiles.keys()
         for file_id in file_ids_to_remove:
             file_sent(self.remote_address, self.outgoingFiles[file_id].filename, 'failed', 'udp', None, 'session has been closed')
-            self.outgoingFiles[file_id].close()
-            del self.outgoingFiles[file_id]
+            self.closeOutboxFile(file_id)
         self.receivedFiles.clear()
         self.sliding_window.clear()
         automat.objects().pop(self.index)
@@ -635,31 +663,29 @@ class TransportUDPSession(automat.Automat):
     def makeFileID(self):
         return int(str(int(time.time() * 100.0))[4:])   
 
-    def register_outbox_file(self, filename, description=''): 
-        global _RegisterTransferFunc
-        try:
-            sz = os.path.getsize(filename)
-        except:
-            sz = -1
-        if _RegisterTransferFunc is None:
-            return None, sz
-        transfer_id = _RegisterTransferFunc('send', self.remote_address, lambda: 0, filename, sz, description)
-        return transfer_id, sz
+#    def register_outbox_file(self, filename, sz, callback, description=''): 
+#        global _RegisterTransferFunc
+#        if _RegisterTransferFunc is None:
+#            return None
+#        transfer_id = _RegisterTransferFunc('send', self.remote_address, callback, filename, sz, description)
+#        return transfer_id
    
     def addOutboxFile(self, filename, description=''):
-        transfer_id, filesize = self.register_outbox_file(filename, description)
-        if transfer_id:
-            self.outbox_queue.append((filename, filesize, transfer_id, description))
-        else:
-            file_sent(self.remote_address, filename, 'failed', 'udp', None, 'unable to register transfer')
+        self.outbox_queue.append((filename, description))
+        # transfer_id, filesize = self.register_outbox_file(filename, description)
+        # if transfer_id:
+        #     self.outbox_queue.append((filename, filesize, transfer_id, description))
+        # else:
+        #     file_sent(self.remote_address, filename, 'failed', 'udp', None, 'unable to register transfer')
         # dhnio.Dprint(6, 'transport_udp_session.addOutboxFile [%s], total outbox files: %d' % (os.path.basename(filename), len(self.outbox_queue)))
         
     def putOutboxFile(self, filename, description=''):
-        transfer_id, filesize = self.register_outbox_file(filename, description)
-        if transfer_id:
-            self.outbox_queue.insert(0, (filename, filesize, transfer_id, description)) 
-        else:
-            file_sent(self.remote_address, filename, 'failed', 'udp', None, 'unable to register transfer')
+        self.outbox_queue.insert(0, (filename, description))
+        # transfer_id, filesize = self.register_outbox_file(filename, description)
+        # if transfer_id:
+        #     self.outbox_queue.insert(0, (filename, filesize, transfer_id, description)) 
+        # else:
+        #     file_sent(self.remote_address, filename, 'failed', 'udp', None, 'unable to register transfer')
         # dhnio.Dprint(6, 'transport_udp_session.putOutboxFile [%s], total outbox files: %d' % (os.path.basename(filename), len(self.outbox_queue)))
     
     def eraseOldFileIDs(self):
@@ -687,30 +713,42 @@ class TransportUDPSession(automat.Automat):
         self.block_size_level -= 2
         if self.block_size_level < 0:
             self.block_size_level = 0
-        print self.block_size_level
+        # print self.block_size_level
 
     def processOutboxQueue(self):
-        global _UnRegisterTransferFunc
+        # global _UnRegisterTransferFunc
         has_reads = False
         while len(self.outbox_queue) > 0 and len(self.outgoingFiles) < self.maxOutgoingFiles:        
-            filename, filesize, transfer_id, description = self.outbox_queue.pop(0)
+            # filename, filesize, transfer_id, description = self.outbox_queue.pop(0)
+            filename, description = self.outbox_queue.pop(0)
             has_reads = True
             # we have a queue of files to be sent
             # somehow file may be removed before we start sending it
             # so we check it here and skip not existed files
             if not os.path.isfile(filename):
                 file_sent(self.remote_address, filename, 'failed', 'udp', None, 'file were removed')
-                if _UnRegisterTransferFunc:
-                    _UnRegisterTransferFunc(transfer_id)
+                # if _UnRegisterTransferFunc:
+                #     _UnRegisterTransferFunc(transfer_id)
+                continue
+            try:
+                sz = os.path.getsize(filename)
+            except:
+                file_sent(self.remote_address, filename, 'failed', 'udp', None, 'can not get file size')
                 continue
 #            if os.access(filename, os.R_OK):
 #                file_sent(self.remote_address, filename, 'failed', 'udp', None, 'access denied')
 #                continue
             file_id = self.makeFileID()
-            f = OutboxFile(self, self.remote_idurl, file_id, filename, filesize, transfer_id, description)
+            f = OutboxFile(self, self.remote_idurl, file_id, filename, sz, description)
             f.read_blocks()
             self.outgoingFiles[file_id] = f
         return has_reads
+
+    def checkIncomingFiles(self):
+        for file_id in self.incommingFiles.keys():
+            if self.incommingFiles[file_id].is_timed_out():
+                self.automat('shutdown')
+                return
 
     def processSending(self):
         has_sends = False
@@ -719,13 +757,11 @@ class TransportUDPSession(automat.Automat):
         for file_id in self.outgoingFiles.keys():
             if self.outgoingFiles[file_id].send():
                 has_sends = True
-#            if self.outgoingFiles[file_id].has_failed_blocks:
-#                failed_ids.append((file_id, 'has failed blocks'))
             if self.outgoingFiles[file_id].is_timed_out():
                 if self.outgoingFiles[file_id].timeout == 0:
                     failed_ids.append((file_id, 'canceled'))
                 else:
-                    failed_ids.append((file_id, 'timeout'))
+                    # failed_ids.append((file_id, 'timeout'))
                     has_timedout = True
         for file_id, why in failed_ids:
             self.reportSentFailed(file_id, why)
@@ -739,12 +775,13 @@ class TransportUDPSession(automat.Automat):
         return has_sends
     
     def clearOutboxQueue(self):
-        global _UnRegisterTransferFunc
+        failed = []
         while len(self.outbox_queue) > 0:
             filename, filesize, transfer_id, description = self.outbox_queue.pop(0)
-            file_sent(self.remote_address, filename, 'failed', 'udp', None, 'timeout')
-            if _UnRegisterTransferFunc:
-                _UnRegisterTransferFunc(transfer_id)
+            failed.append((filename, filesize, transfer_id, description))
+        for filename, filesize, transfer_id, description in failed:
+            reactor.callLater(0, file_sent, self.remote_address, filename, 'failed', 'udp', None, 'timeout')
+        del failed
             
     def checkWindow(self):
         if len(self.sliding_window) == 0:
@@ -796,12 +833,18 @@ class TransportUDPSession(automat.Automat):
             self.ack_timeout *= 2.0
             if self.ack_timeout > MAX_ACK_TIME_OUT:
                 self.ack_timeout = MAX_ACK_TIME_OUT
+                # TODO transfer is failed - udp packets did not get acket
+                # drop connection!
+                # TODO change transport_udp_server to drop connection
+                self.automat('shutdown')
             # else:
             #     print('adjust_ack_timeout %f' % self.ack_timeout)
         elif timeouts_ratio <= FINE_TIMEOUTS_RATIO:
             self.ack_timeout /= 2.0
             if self.ack_timeout < MIN_ACK_TIME_OUT:
                 self.ack_timeout = MIN_ACK_TIME_OUT
+                # TODO transfer is great!
+                #      increase window size, block size? 
             # else:
             #     print('adjust_ack_timeout %f' % self.ack_timeout)
 
@@ -842,6 +885,10 @@ def check_sending_queue():
         if sess.processSending():
             has_sends = True
     return has_sends
+
+def check_incoming_files():
+    for sess in sessions():
+        sess.checkIncomingFiles()
     
 def process_outbox_queue():
     global _OutboxQueueDelay
@@ -859,9 +906,11 @@ def process_outbox_queue():
     _OutboxQueueTask = reactor.callLater(_OutboxQueueDelay, process_outbox_queue)
         
 
-def process_sending():
+def process_sessions():
     global _SendingDelay
     global _SendingTask
+    
+    check_incoming_files()
     
     has_sends = check_sending_queue()
     
@@ -872,7 +921,7 @@ def process_sending():
         settings.MaximumSendingDelay(),)
     
     # attenuation
-    _SendingTask = reactor.callLater(_SendingDelay, process_sending)
+    _SendingTask = reactor.callLater(_SendingDelay, process_sessions)
     
 #------------------------------------------------------------------------------ 
 

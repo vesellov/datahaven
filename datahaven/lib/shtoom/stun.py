@@ -101,9 +101,10 @@ DefaultServers = [
 #    ('204.91.10.93', 3478), # erlang.divmod.net
 ]
 
+
 StunTypes = {
    0x0001: 'MAPPED-ADDRESS',
-   0x0002: 'RESPONSE-ADDRESS ',
+   0x0002: 'RESPONSE-ADDRESS ', 
    0x0003: 'CHANGE-REQUEST',
    0x0004: 'SOURCE-ADDRESS',
    0x0005: 'CHANGED-ADDRESS',
@@ -299,9 +300,9 @@ class StunDiscoveryProtocol(DatagramProtocol, _StunBase):
             self._potentialStuns[tid] = delayed
             self.sendRequest(address, tid=tid)
         else:
-            if STUNVERBOSE:
-                print "giving up on %r"%(address,)
             del self._potentialStuns[tid]
+            if STUNVERBOSE:
+                print "giving up on %r, _potentialStuns: %s" % (str(address), str(self._potentialStuns))
             if not self._potentialStuns:
                 if STUNVERBOSE:
                     print "stun state 1 timeout - no internet UDP possible"

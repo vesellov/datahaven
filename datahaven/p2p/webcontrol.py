@@ -44,8 +44,6 @@ import lib.diskspace as diskspace
 import lib.dirsize as dirsize
 import lib.diskusage as diskusage
 import lib.commands as commands
-import lib.transport_tcp as transport_tcp
-import lib.transport_control as transport_control
 import lib.contacts as contacts
 import lib.nameurl as nameurl
 import lib.dhncrypto as dhncrypto
@@ -54,6 +52,12 @@ import lib.automat as automat
 import lib.webtraffic as webtraffic
 import lib.bitcoin as bitcoin
 import lib.packetid as packetid
+import lib.transport_control as transport_control
+import lib.transport_tcp as transport_tcp
+if transport_control._TransportCSpaceEnable:
+    import lib.transport_cspace as transport_cspace
+if transport_control._TransportUDPEnable:
+    import lib.transport_udp_session as transport_udp_session
 
 import initializer
 import shutdowner
@@ -1311,10 +1315,9 @@ class InstallPage(Page):
         src += 'they must know the address of your computer on the Internet. \n'
         src += 'These contacts are kept in XML file called '
         src += '<a href="http://datahaven.net/glossary.html#identity" target=_blank>identity</a>.\n'
-        src += 'File identity - is a publicly accessible file, \n'
-        src += 'which has a unique address on the Internet. \n'
-        src += 'So that every user may download your identity file \n'
-        src += 'and find out your contact information.<br>\n'
+        src += 'File identity - is a publicly accessible file, '
+        src += 'so that every user may download your identity file \n'
+        src += 'and find out your contact information.\n'
         src += 'Identity file is digitally signed and that would change it '
         src += 'is necessary to know your <a href="http://datahaven.net/glossary.html#public_private_key" target=_blank>Private Key</a>. \n'
         src += 'The combination of these two keys provides '
@@ -1381,7 +1384,8 @@ class InstallPage(Page):
         src += '</td></tr>\n'
         src += '<tr><td align=center>\n'
         src += '<input id="radio2" type="radio" name="pksize" value="1024" %s />&nbsp;&nbsp;&nbsp;\n' % ('checked' if self.pksize==1024 else '')
-        src += '<input id="radio3" type="radio" name="pksize" value="2048" %s />\n' % ('checked' if self.pksize==2048 else '')
+        src += '<input id="radio3" type="radio" name="pksize" value="2048" %s />&nbsp;&nbsp;&nbsp;\n' % ('checked' if self.pksize==2048 else '')
+        src += '<input id="radio4" type="radio" name="pksize" value="4096" %s />\n' % ('checked' if self.pksize==4096 else '')
         src += '</td></tr>'
         src += '</table>\n'
         src += '<br><br>\n'
@@ -1978,7 +1982,7 @@ class InstallPage(Page):
         src += '<center><h1>software updates</h1><center>\n'
         src += '<p align=justify>The DataHaven.NET is now being actively developed and '
         src += 'current software version can be updated several times a month.</p>\n'
-        src += '<p align=justify>If your computer will run an old version of DataHaven.NET,'
+        src += '<p align=justify>If your computer will run an old version of DataHaven.NET, '
         src += 'then sooner or later, you can lose touch with other users.\n'
         src += 'Since data transmission protocols may be changed - '
         src += 'users will not be able to understand each other '
@@ -1986,7 +1990,7 @@ class InstallPage(Page):
         src += 'Thus, your suppliers will not be able to communicate with you and all your backups will be lost.</p>\n'
         src += '<p align=justify>We recommend that you enable automatic updates, '
         src += 'at least for a period of active development of the project.</p>\n'
-        src += '</table><br>\n'
+        src += '<br>\n'
         src += '<form action="%s" method="post">\n' % request.path
         if dhnio.Windows():
             src += '<h3>how often you\'d like to check the latest version?</h3>\n'
@@ -2005,7 +2009,7 @@ class InstallPage(Page):
                 src += '</td>\n'
             src += '</tr></table>'
         elif dhnio.Linux():
-            src += '<br><p align=justify>The program is installed through a package <b>datahaven</b>, \n'
+            src += '<br><p align=justify>DataHaven.NET is installed through a package <b>datahaven-stable</b>, \n'
             src += 'it should be updated automatically with daily cron job.</p>\n'
         src += '<br><br><br>\n'
         src += '<input type="hidden" name="action" value="next" />\n'
@@ -2417,11 +2421,12 @@ class MainPage(Page):
                 #--- name and checkbox image
                 # checkboxstate = 'checked' if pathID in self.selected_items else ''
                 color = '' if isExist else 'color="#ffdddd"'
-                label = cut_long_string(misc.unicode_to_str_safe(name), 40, '...')
+                itemname = cut_long_string(name, 40, '...')
+                if type in [ backup_fs.DIR, backup_fs.PARENT ] :
+                    itemname = '[%s]' % itemname
+                # label = misc.unicode_to_str_safe(itemname)
 #                if not isExist:
 #                    label += ' (not exist) '
-                if type in [ backup_fs.DIR, backup_fs.PARENT ] :
-                    label = '[%s]' % label
                 src += '<a href="%s?action=select&pathid=%s">' % (request.path, pathID.replace('/','_'))
                 if pathID in self.selected_items:
                     src += '<img src="%s">' % iconurl(request, 'icons/checkbox-on.png')
@@ -2429,7 +2434,10 @@ class MainPage(Page):
                     src += '<img src="%s">' % iconurl(request, 'icons/checkbox-off.png')
                 src += '</a>'
                 src += '<font size=+2 %s>' % color
-                src += label
+                try:
+                    src += misc.unicode_to_str_safe(itemname)
+                except:
+                    src += misc.unicode_to_str_safe(name[:40])
                 src += '</font>'
 #                src += '<input type="checkbox" fontweight="bold" name="pathid%s" value="1" label="%s" onclick=submit %s %s />' % (
 #                    pathID.replace('/','_'), label, bgcolor, checkboxstate)
@@ -2441,7 +2449,7 @@ class MainPage(Page):
                 if False: # dont want to show the image for all items because eat too much performance
                     backupID = pathID+'/'+versions_sorted[0]
                     backupIDurl = backupID.replace('/', '_')
-                    src += '<a href="%s?back=%s">' % ('/'+_PAGE_MAIN+'/'+_PAGE_BACKUP+backupIDurl, request.path,)
+                    src += '<a href="%s?back=%s">' % ('/'+_PAGE_MAIN+'/'+_PAGE_BACKUP_DIAGRAM+backupIDurl, request.path,)
                     src += '<img src="%s?type=bar&width=100&height=16" />' % (
                         iconurl(request, _PAGE_MAIN+'/'+_PAGE_BACKUP_IMAGE+backupIDurl))
                     src += '</a>\n'
@@ -2511,7 +2519,7 @@ class MainPage(Page):
                         if dhnio.Linux():
                             src += '&nbsp;'
                         else:
-                            src += '<a href="%s?back=%s">' % ('/'+_PAGE_MAIN+'/'+_PAGE_BACKUP+backupIDurl, request.path,)
+                            src += '<a href="%s?back=%s">' % ('/'+_PAGE_MAIN+'/'+_PAGE_BACKUP_DIAGRAM+backupIDurl, request.path,)
                             src += '<img src="%s?type=bar&width=100&height=16" />' % (
                                 iconurl(request, _PAGE_MAIN+'/'+_PAGE_BACKUP_IMAGE+backupIDurl))
                             src += '</a>\n'
@@ -3720,7 +3728,7 @@ class BackupDiagramPage(Page, BackupIDSplit):
         src += '<td>only remote copy exist but not available</td></tr>\n'
         src += '</table>\n'
         src += '<br>\n'
-        return html(request, body=src, back='/'+_PAGE_MAIN+'/'+_PAGE_BACKUP+self.backupIDurl, reload='3')
+        return html(request, body=src, back='/'+_PAGE_MAIN, reload='3')
         
 
 class BackupDiagramImage(resource.Resource, BackupIDSplit):
@@ -4073,18 +4081,24 @@ class SuppliersPage(Page):
             self.show_ratings = False
             
         action = arg(request, 'action')
+        #---action call---
         if action == 'call':
-            #---action call---
+            
             transport_control.ClearAliveTimeSuppliers()
             # contact_status.check_contacts(contacts.getSupplierIDs())
             identitypropagate.SlowSendSuppliers(0.2)
-            request.redirect(request.path)
-            request.finish()
-            return NOT_DONE_YET
+            # request.redirect(request.path)
+            # request.finish()
+            # return NOT_DONE_YET
             #DHNViewSendCommand('open %s' % request.path)
             
+        #---action request---
+        elif action == 'request':
+            central_service.clear_users_statuses(contacts.getSupplierIDs())
+            central_service.SendRequestSuppliers()
+        
+        #---action replace---
         elif action == 'replace':
-            #---action replace---
             idurl = arg(request, 'idurl')
             if idurl != '':
                 if not idurl.startswith('http://'):
@@ -4095,8 +4109,8 @@ class SuppliersPage(Page):
                 if contacts.IsSupplier(idurl):
                     fire_hire.A('fire-him-now', idurl)
         
+        #---action change---
         elif action == 'change':
-            #---action change---
             idurl = arg(request, 'idurl')
             newidurl = arg(request, 'newidurl')
             if idurl != '' and newidurl != '':
@@ -4109,11 +4123,11 @@ class SuppliersPage(Page):
                     newidurl = 'http://'+settings.IdentityServerName()+'/'+newidurl+'.xml'
                 if contacts.IsSupplier(idurl):
                     fire_hire.A('fire-him-now', (idurl, newidurl))
-                
 
         #---draw page---
         src = ''
-        src += '<h1>suppliers</h1>\n'
+        src += '<p>my username is <a href="%s" target=_blank>@:</a>%s</p>\n' % (misc.getLocalID(), misc.getIDName())
+        src += '<h1>my suppliers</h1>\n'
 
         if contacts.numSuppliers() > 0:
             w, h = misc.calculate_best_dimension(contacts.numSuppliers())
@@ -4147,7 +4161,7 @@ class SuppliersPage(Page):
                         src += '&nbsp;\n'
                         continue
                     
-                    #---icon---
+        #---icon---
                     if idurl:
                         icon = 'icons/offline-user01.png'
                     else:
@@ -4168,11 +4182,12 @@ class SuppliersPage(Page):
                     central_status = central_service.get_user_status(idurl)
                     central_status_color = _CentralStatusColors.get(central_status, 'gray')
                     #src += '<img src="%s" width=15 height=15>' % iconurl(request, central_status_icon)
+                    src += '<a href="%s" target=_blank>@:</a>' % (idurl)
                     src += '<font color="%s">' % central_status_color
-                    src += '%s' % name
+                    src += name
                     src += '</font>\n'
 
-                    #---show_ratings---
+        #---show_ratings---
                     if self.show_ratings:
                         src += '<font size=1>\n'
                         src += '<table cellpadding=0 cellspacing=0 border=0>\n'
@@ -4181,32 +4196,42 @@ class SuppliersPage(Page):
                             ratings.month(idurl)['alive'],
                             ratings.month(idurl)['all'])
 
-                    #---show_contacts---
+        #---show_contacts---
                     if dhnio.Debug(8):
                         idobj = contacts.getSupplier(idurl)
                         idcontacts = []
+                        idversion = ''
                         if idobj:
                             idcontacts = idobj.getContacts()
+                            idversion = idobj.version.split(' ')[0]
+                            try:
+                                idversion += ' ' + idobj.version.split(' ')[2].split('-')[0]
+                            except:
+                                pass
                         if len(idcontacts) > 0:
                             src += '<table cellpadding=0 cellspacing=0 border=0>\n'
                             for c in idcontacts:
-                                color = '000000'
+                                color = '404040'
                                 for proto in transport_control._PeersProtos.get(idurl, set()):
                                     if c.startswith(proto+'://'):
-                                        color = color[0:4]+'FF'
+                                        color = color[0:4]+'F0'
                                 for proto in transport_control._MyProtos.get(idurl, set()):
                                     if c.startswith(proto+'://'):
-                                        color = 'FF' + color[2:6]
+                                        color = color[0:2]+'F0'+color[4:6]
                                 src += '<tr><td>'
                                 src += '<font color="#%s" size=-4>' % color
                                 src += c[0:26]
                                 src += '</font>'
                                 src += '</td></tr>\n'
+                            try:
+                                src += '<tr><td><font size=-4 color=gray>version: %s</font></td></tr>\n' % (idversion)
+                            except:
+                                pass
                             src += '</table>\n'
 
                     src += '</td>\n'
 
-                    #---html_comment---
+        #---html_comment---
                     month_str = '%d%% %s/%s' % (
                         ratings.month_percent(idurl),
                         ratings.month(idurl)['alive'],
@@ -4239,9 +4264,15 @@ class SuppliersPage(Page):
                         src += c
                         src += '</font>'
                         src += '</td></tr>\n'
+                    try:
+                        idversion = misc.getLocalIdentity().version.split(' ')[0]
+                        idversion += ' ' + misc.getLocalIdentity().version.split(' ')[2].split('-')[0]
+                        src += '<tr><td><font size=-4 color=gray>my version: %s</font></td></tr>\n' % (idversion)
+                    except:
+                        pass
                     src += '</table>\n'
 
-            src += '<br><br><p><a href="?action=call&back=%s">Call all suppliers to find out who is alive</a></p><br>\n' % back
+            src += '<br><br>'
 
         else:
             src += '<table width="80%"><tr><td>\n'
@@ -4256,6 +4287,10 @@ class SuppliersPage(Page):
                 'This may be due to the fact that the connection to the Central server is not finished yet\n'+
                 'or the Central server can not find the number of users that meet your requirements.')
 
+        #---links---
+        if contacts.numSuppliers() > 0:
+            src += '<p><a href="?action=call&back=%s">Call all suppliers to find out who is alive</a></p><br>\n' % back 
+        src += '<p><a href="?action=request&back=%s">Request list of suppliers from Central server</a></p>\n' % (back)
         src += '<p><a href="%s?back=%s">Switch to Customers</a></p>\n' % ('/'+_PAGE_CUSTOMERS, back)
         if self.show_ratings:
             src += '<p><a href="%s?ratings=0&back=%s">Hide monthly ratings</a></p>\n' % (request.path, back)
@@ -4386,17 +4421,22 @@ class CustomersPage(Page):
         
         action = arg(request, 'action')
 
+        #---action call---
         if action == 'call':
-            #---action call---
             transport_control.ClearAliveTimeCustomers()
             # contact_status.check_contacts(contacts.getCustomerIDs())
             identitypropagate.SlowSendCustomers(0.2)
-            request.redirect(request.path)
-            request.finish()
-            return NOT_DONE_YET
+            # request.redirect(request.path)
+            # request.finish()
+            # return NOT_DONE_YET
 
+        #---action request---
+        elif action == 'request':
+            central_service.clear_users_statuses(contacts.getCustomerIDs())
+            central_service.SendRequestCustomers()
+
+        #---action remove---
         elif action == 'remove':
-            #---action remove---
             idurl = arg(request, 'idurl')
             if idurl != '':
                 if not idurl.startswith('http://'):
@@ -4407,8 +4447,10 @@ class CustomersPage(Page):
                 if contacts.IsCustomer(idurl):
                     central_service.SendReplaceCustomer(idurl)
 
+        #---draw page---
         src = ''
-        src += '<h1>customers</h1>\n'
+        src += '<p>me is <a href="%s" target=_blank>@:</a>%s</p>\n' % (misc.getLocalID(), misc.getIDName())
+        src += '<h1>my customers</h1>\n'
 
         if contacts.numCustomers() > 0:
             w, h = misc.calculate_best_dimension(contacts.numCustomers())
@@ -4436,15 +4478,15 @@ class CustomersPage(Page):
                         src += '&nbsp;\n'
                         continue
 
-                    #---icon---
+        #---icon---
                     icon = 'icons/offline-user01.png'
                     state = 'offline'
                     if contact_status.isOnline(idurl):
                         icon = 'icons/online-user01.png'
                         state = 'online '
 
-                    if w >= 5 and len(name) > 10:
-                        name = name[0:9] + '<br>' + name[9:]
+                    # if w >= 5 and len(name) > 10:
+                    #     name = name[0:9] + '<br>' + name[9:]
                     src += '<a href="%s">' % link
                     src += '<img src="%s" width=%d height=%d>' % (
                         iconurl(request, icon),
@@ -4453,11 +4495,12 @@ class CustomersPage(Page):
                     # central_status = central_service._CentralStatusDict.get(idurl, '')
                     central_status = central_service.get_user_status(idurl)
                     central_status_color = _CentralStatusColors.get(central_status, 'gray')
+                    src += '<a href="%s" target=_blank>@:</a>' % (idurl)
                     src += '<font color="%s">' % central_status_color
                     src += '%s' % name
                     src += '</font>\n'
 
-                    #---show_ratings---
+        #---show_ratings---
                     if self.show_ratings:
                         src += '<font size=1>\n'
                         src += '<table cellpadding=0 cellspacing=0 border=0>\n'
@@ -4466,32 +4509,42 @@ class CustomersPage(Page):
                             ratings.month(idurl)['alive'],
                             ratings.month(idurl)['all'])
 
-                    #---show_contacts---
+        #---show_contacts---
                     if dhnio.Debug(8):
                         idobj = contacts.getCustomer(idurl)
                         idcontacts = []
+                        idversion = ''
                         if idobj:
                             idcontacts = idobj.getContacts()
+                            idversion = idobj.version.split(' ')[0]
+                            try:
+                                idversion += ' ' + idobj.version.split(' ')[2].split('-')[0]
+                            except:
+                                pass
                         if len(idcontacts) > 0:
                             src += '<table cellpadding=0 cellspacing=0 border=0>\n'
                             for c in idcontacts:
-                                color = '000000'
+                                color = '404040'
                                 for proto in transport_control._PeersProtos.get(idurl, set()):
                                     if c.startswith(proto+'://'):
-                                        color = color[0:4]+'FF'
+                                        color = color[0:4]+'F0'
                                 for proto in transport_control._MyProtos.get(idurl, set()):
                                     if c.startswith(proto+'://'):
-                                        color = 'FF' + color[2:6]
+                                        color = color[0:2]+'F0'+color[4:6]
                                 src += '<tr><td>'
                                 src += '<font color="#%s" size=-4>' % color
                                 src += c[0:26]
                                 src += '</font>'
                                 src += '</td></tr>\n'
+                            try:
+                                src += '<tr><td><font size=-4 color=gray>version: %s</font></td></tr>\n' % (idversion)
+                            except:
+                                pass
                             src += '</table>\n'
 
                     src += '</td>\n'
                     
-                    #---html_comment---
+        #---html_comment---
                     month_str = '%d%% %s/%s' % (
                         ratings.month_percent(idurl),
                         ratings.month(idurl)['alive'],
@@ -4508,14 +4561,17 @@ class CustomersPage(Page):
                         total_str.ljust(20),))
 
                 src += '</tr>\n'
-
             src += '</table>\n'
-            src += '<br><br><p><a href="?action=call&back=%s">Call all customers to find out who is alive</a></p><br>\n' % back
+            src += '<br><br>'
 
         else:
             src += '<p>List of your customers is empty.<br></p>\n'
             src += html_comment('List of your customers is empty.\n')
 
+        #---links---
+        if contacts.numCustomers() > 0:
+            src += '<p><a href="?action=call&back=%s">Call all customers to find out who is alive</a></p><br>\n' % back
+        src += '<p><a href="?action=request&back=%s">Request list of my customers from Central server</a></p>\n' % (back)
         src += '<p><a href="%s?back=%s">Switch to Suppliers</a></p>\n' % ('/'+_PAGE_SUPPLIERS, back)
         if self.show_ratings:
             src += '<p><a href="%s?ratings=0&back=%s">Hide monthly ratings</a></p>\n' % (request.path, back)
@@ -6221,9 +6277,9 @@ class MessagePage(Page):
         src += '</table>\n'
         src += '</td></tr>\n'
         src += '<tr><td align=left>\n'
-        src += '<table border=1><tr><td>\n'
+        src += '<table border=1 width=90%><tr><td>\n'
         src += msg[4].replace('\n', '<br>\n')
-        src += '</td></tr></table>\n'
+        src += '<br><br></td></tr></table>\n'
         src += '</td></tr></table>\n'
         src += '<br><br>\n'
         return html(request, body=src, back=_PAGE_MESSAGES)
@@ -6280,7 +6336,7 @@ class MessagesPage(Page):
                     src += '</td>\n'
                 src += '</a>\n'
                 src += '<a href="%s?action=delete&mid=%s"><td>' % (request.path, mid)
-                src += '<img src="%s" /></td></a>\n' % iconurl(request, 'icons/delete02.png')
+                src += '<img src="%s" /></td></a>\n' % iconurl(request, 'icons/delete-message.png')
                 src += '</tr>\n'
             src += '</table><br><br>\n'
         return html(request, body=src, title='messages', back=arg(request, 'back', '/'+_PAGE_MENU))
@@ -6297,26 +6353,32 @@ class NewMessagePage(Page):
     def renderPage(self, request):
         idurls = contacts.getContactsAndCorrespondents()
         idurls.sort()
-        recipient = arg(request, 'recipient')
+        recipient = arg(request, 'recipient', '')
         subject = arg(request, 'subject')
         body = arg(request, 'body')
         action = arg(request, 'action').lower().strip()
+        errmsg = ''
 
         if action == 'send':
-            msgbody = message.MakeMessage(recipient, subject, body)
-            message.SendMessage(recipient, msgbody)
-            message.SaveMessage(msgbody)
-            request.redirect('/'+_PAGE_MESSAGES)
-            request.finish()
-            return NOT_DONE_YET
+            if recipient:
+                msgbody = message.MakeMessage(recipient, subject, body)
+                message.SendMessage(recipient, msgbody)
+                message.SaveMessage(msgbody)
+                request.redirect('/'+_PAGE_MESSAGES)
+                request.finish()
+                return NOT_DONE_YET
+            errmsg = 'need to choose recipient'
 
         src = ''
         src += '<h1>new message</h1>\n'
+        if errmsg:
+            src += '<font color=red>%s</font><br>\n' % errmsg
         src += '<form action="%s", method="post">\n' % request.path
         src += '<table>\n'
-        src += '<tr><td align=right><b>To:</b></td>\n'
+        src += '<tr><td align=right>'
+        src += '<b>To:</b></td>\n'
         src += '<td><select name="recipient">\n'
-        for idurl in idurls:
+        for idurl in ['',] + idurls:
             name = nameurl.GetName(idurl)
             src += '<option value="%s"' % idurl
             if idurl == recipient:
@@ -6388,7 +6450,6 @@ class CorrespondentsPage(Page):
                     if not name:
                         src += '&nbsp;\n'
                         continue
-                    
                     # central_status = central_service._CentralStatusDict.get(idurl, '')
                     central_status = central_service.get_user_status(idurl)
                     icon = 'icons/offline-user01.png'
@@ -6397,7 +6458,6 @@ class CorrespondentsPage(Page):
                     if central_status in ['!', '=']:
                         icon = 'icons/online-user01.png'
                         state = 'online '
-    
                     if w >= 5 and len(name) > 10:
                         name = name[0:9] + '<br>' + name[9:]
                     src += '<img src="%s" width=%d height=%d>' % (
@@ -6406,7 +6466,6 @@ class CorrespondentsPage(Page):
                     src += '%s' % name
                     src += '&nbsp;[<a href="%s?action=remove&idurl=%s&back=%s">x</a>]\n' % (
                         request.path, nameurl.Quote(idurl), arg(request, 'back', '/'+_PAGE_MENU))
-
                     src += '</td>\n'
                 src += '</tr>\n'
             src += '</table>\n'
@@ -6421,7 +6480,6 @@ class CorrespondentsPage(Page):
         name = arg(request, 'name', nameurl.GetName(idurl))
         msg = ''
         typ = 'info'
-
         if action == 'add':
             idurl = 'http://' + settings.IdentityServerName() + '/' + name + '.xml'
             if not misc.ValidUserName(name):
@@ -6437,7 +6495,6 @@ class CorrespondentsPage(Page):
                 res.addErrback(self._check_name_eb, request, name)
                 request.notifyFinish().addErrback(self._check_name_eb, request, name)
                 return NOT_DONE_YET
-            
         elif action == 'remove':
             if idurl in contacts.getCorrespondentIDs():
                 contacts.removeCorrespondent(idurl)
@@ -6448,7 +6505,6 @@ class CorrespondentsPage(Page):
             else:
                 msg = '%s is not your friend' % name
                 typ = 'error'
-
         src = self._body(request, name, msg, typ)
         return html(request, body=src, back=arg(request, 'back', _PAGE_CORRESPONDENTS))
 
@@ -6729,11 +6785,20 @@ class UpdateShedulePage(ShedulePage):
         return src
 
 
+_DevReportProcess = ''
 class DevReportPage(Page):
     pagename = _PAGE_DEV_REPORT
 
+    def progress_callback(self, x, y):
+        global _DevReportProcess
+        if x == y:
+            _DevReportProcess = ''
+        else:
+            _DevReportProcess = '%d/%d' % (x,y)
+        
     def renderPage(self, request):
         global local_version
+        global _DevReportProcess
 
         subject = arg(request, 'subject')
         body = arg(request, 'body')
@@ -6741,12 +6806,23 @@ class DevReportPage(Page):
         includelogs = arg(request, 'includelogs', 'True')
 
         src = ''
-        if action == 'send':
-            misc.SendDevReport(subject, body, includelogs=='True')
-            src += '<br><br><br><h3>Thank you for your help!</h3>'
-            return html(request, body=src, back=_PAGE_CONFIG)
-
-        src += '<h3>send Message</h3>'
+        if action == 'send' and _DevReportProcess == '':
+            misc.SendDevReport(subject, body, includelogs=='True', 
+                progress=self.progress_callback)
+            _DevReportProcess = '0/0'
+            # src += '<br><br><br><h3>Thank you for your help!</h3>'
+            # return html(request, body=src, back=_PAGE_CONFIG, reload='5')
+            
+        if _DevReportProcess:
+            src += '<br><br><br><h3>Thank you for your help !!!</h3>'
+            src += '<br><br><h3>progress</h3>\n'
+            if _DevReportProcess == '0/0':
+                src += 'compressing ... '
+            else:
+                src += 'sending: ' + _DevReportProcess
+            return html(request, body=src, back='/'+_PAGE_CONFIG, reload='0.2')
+        
+        src += '<h3>send Message</h3>\n'
         src += '<form action="%s", method="post">\n' % request.path
         src += '<table>\n'
         src += '<tr><td align=right><b>To:</b></td>\n'
@@ -6829,17 +6905,40 @@ class EmergencyPage(Page):
 
 class MonitorTransportsPage(Page):
     pagename = _PAGE_MONITOR_TRANSPORTS
+    mode = 'connections'
     
     def renderPage(self, request):
-        # back = arg(request, 'back', '/'+_PAGE_DEVELOPMENT) 
+        reloadtime = arg(request, 'reloadtime', '1')
+        modeswitch = arg(request, 'modeswitch', '')
+        if modeswitch == 'transfers':
+            self.mode = 'transfers'
+        elif modeswitch == 'connections':
+            self.mode = 'connections'
+        src = ''
+        if self.mode == 'transfers':
+            src += '<a href="?modeswitch=connections">connections</a> | <b>transfers</b> '
+        else:
+            src += ' <b>connections</b> | <a href="?modeswitch=transfers">transfers</a>'
+        src += '&nbsp;&nbsp;&nbsp;'
+        src += 'reload: <a href="?reloadtime=0.1">[1/10 sec.]</a>|'
+        src += '<a href="?reloadtime=0.2">[1/5 sec.]</a>|'
+        src += '<a href="?reloadtime=0.5">[1/2 sec.]</a>|'
+        src += '<a href="?reloadtime=1">[1 sec.]</a>|'
+        src += '<a href="?reloadtime=5">[5 sec.]</a>\n'
+        src += '<br>\n'
+        if self.mode == 'transfers':
+            src += self.renderTransfers(request)
+        else:
+            src += self.renderConnections(request)
+        return html(request, body=src, back='none', home='', reload=reloadtime, window_title='Traffic')
+    
+    def renderTransfers(self, request):
         transfers = transport_control.current_transfers()
         bytes_stats = transport_control.current_bytes_transferred()
         counters = transport_control.counters()
         index = {'unknown': {'send': [], 'receive':[]}}
         for info in transfers:
             idurl = info.remote_idurl
-            if not ( idurl.startswith('http://') and idurl.endswith('.xml') ):
-                idurl = 'unknown'
             if not index.has_key(idurl):
                 index[idurl] = {'send': [], 'receive':[]}
             index[idurl][info.send_or_receive].append((info.transfer_id, info.proto, info.size, info.description))
@@ -6848,9 +6947,10 @@ class MonitorTransportsPage(Page):
                 continue
             if not index.has_key(idurl):
                 index[idurl] = {'send': [], 'receive':[]}
-        src = ''
-        src += '<font size=-3>\n'
-        src += '<table width=100%><tr><td width=33% valign=top>\n'
+        src = ''        
+        src += '<font size=-4>\n'
+        src += '<table width=100%>'
+        src += '<tr><td width=50% valign=top>\n'
         src += '<p>send queue length: <b>%d</b>\n</p>\n' % transport_control.SendQueueLength()
         if len(transport_control.SendQueue()) > 0:
             src += '<table width=100% cellspacing=0 cellpadding=2 border=0>\n'
@@ -6880,7 +6980,7 @@ class MonitorTransportsPage(Page):
                 src += '</tr>\n'
                 i += 1
             src += '</table>\n'
-        src += '</td>\n<td width=33% valign=top>\n' 
+        src += '</td>\n<td width=50% valign=top>\n' 
         src += '<p>current transfers: <b>%d</b>\n</p>\n' % len(transport_control.current_transfers())
         if len(index) > 0:
             src += '<table width=100% cellspacing=0 cellpadding=2 border=0>\n'
@@ -6920,13 +7020,15 @@ class MonitorTransportsPage(Page):
                     src += '<table border=0 cellspacing=0 cellpadding=0><tr><td align=right>\n'
                     counter = 0
                     for tranfer_id, proto, size, description in index[idurl]['receive']:
-                        command = description[:description.find('(')+1]
+                        command = description
+                        if description.count('('):
+                            command = description[:description.find('(')]
                         b = bytes_stats[tranfer_id]
                         if str(size) not in ['', '0', '-1']:
                             progress = '%s/%s' % (diskspace.MakeStringFromBytes(b).replace(' ',''), diskspace.MakeStringFromBytes(size).replace(' ',''))
                         else:
                             progress = '%s' %  diskspace.MakeStringFromBytes(b).replace(' ','')
-                        src += '<table bgcolor="#a0a0f0"><tr><td nowrap><font size=-1>%s:%s[%s]</font></td></tr></table>\n' % (
+                        src += '<table bgcolor="#a0a0f0"><tr><td nowrap><font>%s:%s[%s]</font></td></tr></table>\n' % (
                             proto, command, progress)
                         counter += 1
                     src += '</td></tr></table>\n'
@@ -6948,12 +7050,15 @@ class MonitorTransportsPage(Page):
                     src += '<table border=0 cellspacing=0 cellpadding=0><tr><td align=left>\n'
                     for tranfer_id, proto, size, description in index[idurl]['send']:
                         b = bytes_stats[tranfer_id]
-                        description = description[:description.find('(')-1]
+                        command = description
+                        if description.count('('):
+                            command = description[:description.find('(')]
                         if b:
                             progress = '%s/%s' % (diskspace.MakeStringFromBytes(b).replace(' ',''), diskspace.MakeStringFromBytes(size).replace(' ',''))
                         else:
                             progress = '%s' %  diskspace.MakeStringFromBytes(size).replace(' ','')
-                        src += '<table bgcolor="#a0f0a0"><tr><td nowrap><font size=-1>%s:%s[%s]</font></td></tr></table>\n' % (proto, description, progress)
+                        src += '<table bgcolor="#a0f0a0"><tr><td nowrap><font>%s:%s[%s]</font></td></tr></table>\n' % (
+                            proto, command, progress)
                     src += '</td></tr></table>\n'
                 else:
                     src += '&nbsp;'
@@ -6970,7 +7075,16 @@ class MonitorTransportsPage(Page):
             src += '<td nowrap>%s</td>\n' % diskspace.MakeStringFromBytes(counters.get('total_bytes', {'send': 0})['send'])
             src += '</tr>\n'
             src += '</table>\n'
-        src += '</td>\n<td width=33% valign=top>\n'
+        src += '</td></tr>\n'
+        src += '</table>\n'
+        src += '</font>\n'
+        return src
+
+    def renderConnections(self, request):
+        src = ''
+        src += '<font size=-4>\n'
+        src += '<table width=100%>'
+        src += '<tr><td width=33% valign=top>\n'
         if True:
             src += '<p>opened TCP connections: <b>%d</b></p>' % transport_tcp.opened_connections_count()
             if len(transport_tcp.opened_connections()) > 0:
@@ -6979,7 +7093,10 @@ class MonitorTransportsPage(Page):
                 src += '<td align=left nowrap><b><font color="#ffffff">remote host</font></b></td>\n'
                 src += '<td align=left nowrap><b><font color="#ffffff">remote port</font></b></td>\n'
                 src += '<td align=left nowrap><b><font color="#ffffff">pending files</font></b></td>\n'
+                src += '<td align=left nowrap><b><font color="#ffffff">sent</font></b></td>\n'
+                src += '<td align=left nowrap><b><font color="#ffffff">received</font></b></td>\n'
                 src += '<td align=left nowrap><b><font color="#ffffff">sending/receiving</font></b></td>\n'
+                src += '<td align=left nowrap><b><font color="#ffffff">mode</font></b></td>\n'
                 src += '</tr>\n'
                 i = 0
                 for address, connections in transport_tcp.opened_connections().items():
@@ -6992,12 +7109,15 @@ class MonitorTransportsPage(Page):
                         src += '<td nowrap>%s</td>' % address[0]
                         src += '<td nowrap>%d</td>' % address[1]
                         src += '<td nowrap>%d</td>' % len(connection.outbox)
+                        src += '<td nowrap>%s</td>' % diskspace.MakeStringFromBytes(connection.totalBytesSent)
+                        src += '<td nowrap>%s</td>' % diskspace.MakeStringFromBytes(connection.totalBytesReceived)
                         st = []
                         if connection.fileSender is not None:
                             st.append('sending')
                         if connection.fileReceiver is not None:
                             st.append('receiving')
                         src += '<td nowrap>%s</td>' % (','.join(st))
+                        src += '<td nowrap>%s</td>' % (str(connection.type)[0])
                         src += '</tr>\n'
                 src += '</table>\n'
             src += '<p>started TCP connections: <b>%d</b></p>\n' % len(transport_tcp.started_connections())
@@ -7020,10 +7140,60 @@ class MonitorTransportsPage(Page):
                     src += '<td nowrap>%d</td>' % len(connection.pendingoutboxfiles)
                     src += '</tr>\n'
                 src += '</table>\n'
-        src += '&nbsp;'
-        src += '</td></tr></table>\n'
+        src += '</td>\n<td width=33% valign=top>\n' 
+        if transport_control._TransportCSpaceEnable:
+            src += '<p>opened CSpace connections: <b>%d</b></p>\n' % (
+                len(transport_cspace.opened_opened_streams_list()))
+            if len(transport_cspace.opened_opened_streams_list()) > 0:
+                src += '<table width=100% cellspacing=0 cellpadding=2 border=0>\n'
+                src += '<tr bgcolor="#000000">\n'
+                src += '<td align=left nowrap><b><font color="#ffffff">key ID</font></b></td>\n'
+                src += '<td align=left nowrap><b><font color="#ffffff">state</font></b></td>\n'
+                src += '<td align=left nowrap><b><font color="#ffffff">sent</font></b></td>\n'
+                src += '<td align=left nowrap><b><font color="#ffffff">received</font></b></td>\n'
+                src += '</tr>\n'
+                i = 0
+                for item in transport_cspace.opened_opened_streams_list():
+                    keyID, state, sentBytes, receivedBytes = item.split(':')
+                    if i % 2: 
+                        src += '<tr>\n'
+                    else:
+                        src += '<tr bgcolor="#f0f0f0">\n'
+                    i += 1
+                    src += '<td nowrap>%s</td>' % keyID
+                    src += '<td nowrap>%s</td>' % state
+                    src += '<td nowrap>%s</td>' % diskspace.MakeStringFromBytes(sentBytes)
+                    src += '<td nowrap>%s</td>' % diskspace.MakeStringFromBytes(receivedBytes)
+                    src += '</tr>\n'
+                src += '</table>\n'
+        src += '</td>\n<td width=33% valign=top>\n' 
+        if transport_control._TransportUDPEnable:
+            sessions = list(transport_udp_session.sessions())
+            src += '<p>opened UDP sessions: <b>%d</b></p>\n' % len(sessions)
+            if len(sessions) > 0:
+                src += '<table width=100% cellspacing=0 cellpadding=2 border=0>\n'
+                src += '<tr bgcolor="#000000">\n'
+                src += '<td align=left nowrap><b><font color="#ffffff">address</font></b></td>\n'
+                src += '<td align=left nowrap><b><font color="#ffffff">state</font></b></td>\n'
+                src += '<td align=left nowrap><b><font color="#ffffff">files in/out</font></b></td>\n'
+                src += '</tr>\n'
+                i = 0
+                for session in sessions:
+                    if i % 2: 
+                        src += '<tr>\n'
+                    else:
+                        src += '<tr bgcolor="#f0f0f0">\n'
+                    i += 1
+                    src += '<td nowrap>%s:%d</td>' % session.remote_address
+                    src += '<td nowrap>%s</td>' % session.state
+                    src += '<td nowrap>%d/%d</td>' % (
+                        len(session.incommingFiles), len(session.outgoingFiles))
+                    src += '</tr>\n'
+                src += '</table>\n'
+        src += '</td></tr>\n'
+        src += '</table>\n'
         src += '</font>\n'
-        return html(request, body=src, back='none', home='', reload='1', window_title='Traffic')
+        return src
 
 
 class TrafficPage(Page):
@@ -7259,7 +7429,7 @@ class SettingsTreeNode(Page):
             self.modifyList.append((path, value))
             if self.modifyTask is None:
                 self.modifyTask = reactor.callLater(1, self.modifyWorker)
-                dhnio.Dprint(4, 'webcontrol.SettingsTreeNode.requestModify(%s) task for %s' % (self.path, path))
+                dhnio.Dprint(4, 'webcontrol.SettingsTreeNode.requestModify (%s) task for %s' % (self.path, path))
         else:
             oldvalue = settings.uconfig(path)
             settings.uconfig().set(path, value)

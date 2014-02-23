@@ -52,8 +52,13 @@ def io():
 
 def init():
     dhnio.Dprint(4,"io_throttle.init")
-    _throttle = io()
+    io()
     transport_control.AddOutboxPacketStatusFunc(OutboxStatus)
+
+def shutdown():
+    dhnio.Dprint(4,"io_throttle.shutdown")
+    io().DeleteBackupRequests('')
+    io().DeleteSuppliers(io().supplierQueues.keys())
 
 def SetPacketReportCallbackFunc(func):
     global _PacketReportCallbackFunc
@@ -148,7 +153,7 @@ class FileToSend:
         self.callOnFail = callOnFail
         self.sendTime = None
         self.ackTime = None
-        self.sendTimeout = max( int(self.fileSize/settings.SendingSpeedLimit() ), settings.SendTimeOut() )
+        self.sendTimeout = max( int(self.fileSize/settings.SendingSpeedLimit() ), 5 ) + 5 # maximum 5 seconds to get an Ack
         self.result = ''
         PacketReport('send', self.remoteID, self.packetID, 'init')
         
@@ -194,6 +199,7 @@ class SupplierQueue:
         
         self.sendFailedPacketIDs = []
         
+        self._runSend = False
         self.sendTask = None
         self.sendTaskDelay = 0.1
         self.requestTask = None
@@ -243,18 +249,21 @@ class SupplierQueue:
             
             
     def RunSend(self):
+        if self._runSend:
+            return
+        self._runSend = True
         #dhnio.Dprint(6, 'io_throttle.RunSend')
-        packetsFialed = []
-        packetsToRemove = []
+        packetsFialed = {}
+        packetsToRemove = set()
         packetsSent = 0
         # let's check all packets in the queue        
-        for i in range(len(self.fileSendQueue)):
+        for i in xrange(len(self.fileSendQueue)):
             packetID = self.fileSendQueue[i]
             fileToSend = self.fileSendDict[packetID]
             # we got notify that this packet was failed to send
             if packetID in self.sendFailedPacketIDs:
                 self.sendFailedPacketIDs.remove(packetID)
-                packetsFialed.append((packetID, 'failed'))
+                packetsFialed[packetID] = 'failed'
                 continue
             # we already sent the file
             if fileToSend.sendTime is not None:
@@ -263,19 +272,19 @@ class SupplierQueue:
                 if fileToSend.ackTime is not None:
                     # deltaTime = fileToSend.ackTime - fileToSend.sendTime
                     # so remove it from queue
-                    packetsToRemove.append(packetID)
+                    packetsToRemove.add(packetID)
                 # if we do not get an ack ...    
                 else:
                     # ... we do not want to wait to long
                     if time.time() - fileToSend.sendTime > fileToSend.sendTimeout:
                         # so this packet is failed because no response on it 
-                        packetsFialed.append((packetID, 'timeout'))
+                        packetsFialed[packetID] = 'timeout'
                 # we sent this packet already - check next one
                 continue
             # the data file to send no longer exists - it is failed situation
             if not os.path.exists(fileToSend.fileName):
                 dhnio.Dprint(4, "io_throttle.RunSend WARNING file %s not exist" % (fileToSend.fileName))
-                packetsFialed.append((packetID, 'not exist'))
+                packetsFialed[packetID] = 'not exist'
                 continue
             # do not send too many packets, need to wait for ack
             # hold other packets in the queue and may be send next time
@@ -312,9 +321,9 @@ class SupplierQueue:
             fileToSend.sendTime = time.time()
             packetsSent += 1
         # process failed packets
-        for packetID, why in packetsFialed:
+        for packetID, why in packetsFialed.items():
             self.FileSendFailed(self.fileSendDict[packetID].remoteID, packetID, why)
-            packetsToRemove.append(packetID)
+            packetsToRemove.add(packetID)
         # remove finished packets    
         for packetID in packetsToRemove:
             self.fileSendQueue.remove(packetID)
@@ -327,6 +336,7 @@ class SupplierQueue:
         # erase temp lists    
         del packetsFialed
         del packetsToRemove
+        self._runSend = False
         return result
         
 
@@ -345,11 +355,13 @@ class SupplierQueue:
         #dhnio.Dprint(6, 'io_throttle.DoSend')
         if self.sendTask is None:
             self.SendingTask()
-        else:
-            if self.sendTaskDelay > 1.0:
-                self.sendTask.cancel()
-                self.sendTask = None
-                self.SendingTask()
+            return
+        if self._runSend:
+            return
+        if self.sendTaskDelay > 1.0:
+            self.sendTask.cancel()
+            self.sendTask = None
+            reactor.callLater(0, self.SendingTask)
             
 
     def FileSendAck(self, packet):    
@@ -372,8 +384,9 @@ class SupplierQueue:
             self.fileSendDict[packet.PacketID].result = 'failed'
             if self.fileSendDict[packet.PacketID].callOnFail:
                 reactor.callLater(0, self.fileSendDict[packet.PacketID].callOnFail, packet.CreatorID, packet.PacketID, 'failed')
-        dhnio.Dprint(10, "io_throttle.FileSendAck %s from %s, queue=%d" % (str(packet), self.remoteName, len(self.fileSendQueue)))
         self.DoSend()
+        # self.RunSend()
+        dhnio.Dprint(14, "io_throttle.FileSendAck %s from %s, queue=%d" % (str(packet), self.remoteName, len(self.fileSendQueue)))
 
         
     def FileSendFailed(self, RemoteID, PacketID, why):
@@ -386,8 +399,7 @@ class SupplierQueue:
             return
         self.fileSendDict[PacketID].result = why
         fileToSend = self.fileSendDict[PacketID]
-        assert fileToSend.remoteID == RemoteID
-        dhnio.Dprint(10, "io_throttle.FileSendFailed %s to [%s] because %s" % (PacketID, nameurl.GetName(fileToSend.remoteID), why))
+        # assert fileToSend.remoteID == RemoteID
         transport_control.RemoveSupplierRequestFromSendQueue(fileToSend.packetID, fileToSend.remoteID, commands.Data())
         transport_control.RemoveInterest(fileToSend.remoteID, fileToSend.packetID)
         if why == 'timeout':
@@ -395,6 +407,8 @@ class SupplierQueue:
         if fileToSend.callOnFail:
             reactor.callLater(0, fileToSend.callOnFail, RemoteID, PacketID, why)
         self.DoSend()
+        # self.RunSend()
+        dhnio.Dprint(10, "io_throttle.FileSendFailed %s to [%s] because %s" % (PacketID, nameurl.GetName(fileToSend.remoteID), why))
 
 
     def SupplierRequestFile(self, callOnReceived, creatorID, packetID, ownerID):
@@ -418,7 +432,7 @@ class SupplierQueue:
 
     def RunRequest(self):
         #dhnio.Dprint(6, 'io_throttle.RunRequest')
-        packetsToRemove = []
+        packetsToRemove = set()
         for i in range(0, min(self.fileRequestMaxLength, len(self.fileRequestQueue))):
             packetID = self.fileRequestQueue[i]
             currentTime = time.time()
@@ -429,11 +443,11 @@ class SupplierQueue:
                     if currentTime - self.fileRequestDict[packetID].requestTime > self.fileRequestDict[packetID].requestTimeout:
                         # and time is out!!!
                         self.fileRequestDict[packetID].report = 'timeout' 
-                        packetsToRemove.append(packetID)
+                        packetsToRemove.add(packetID)
                 else:
                     # the packet were received (why it is not removed from the queue yet ???)
                     self.fileRequestDict[packetID].result = 'received'
-                    packetsToRemove.append(packetID)
+                    packetsToRemove.add(packetID)
             if self.fileRequestDict[packetID].requestTime is None:
                 if not os.path.exists(os.path.join(settings.getLocalBackupsDir(), packetID)): 
                     fileRequest = self.fileRequestDict[packetID]
@@ -454,7 +468,7 @@ class SupplierQueue:
                 else:
                     # we have the data file, no need to request it
                     self.fileRequestDict[packetID].result = 'exist'
-                    packetsToRemove.append(packetID)
+                    packetsToRemove.add(packetID)
         # remember requests results
         result = len(packetsToRemove)
         # remove finished requests
@@ -517,19 +531,19 @@ class SupplierQueue:
             # if we're closing down this queue 
             # (supplier replaced, don't any anything new)
             return
-        packetsToRemove = []
+        packetsToRemove = set()
         for packetID in self.fileSendQueue:
             if packetID.count(backupName):
                 self.FileSendFailed(self.fileSendDict[packetID].remoteID, packetID, 'delete request')
-                packetsToRemove.append(packetID)
+                packetsToRemove.add(packetID)
                 dhnio.Dprint(12, 'io_throttle.DeleteBackupRequests %s from send queue' % packetID)
         for packetID in packetsToRemove:
             self.fileSendQueue.remove(packetID)
             del self.fileSendDict[packetID]
-        packetsToRemove = []
+        packetsToRemove = set()
         for packetID in self.fileRequestQueue:
             if packetID.count(backupName):
-                packetsToRemove.append(packetID)
+                packetsToRemove.add(packetID)
                 dhnio.Dprint(12, 'io_throttle.DeleteBackupRequests %s from request queue' % packetID)
         for packetID in packetsToRemove:
             self.fileRequestQueue.remove(packetID)

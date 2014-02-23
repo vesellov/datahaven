@@ -47,6 +47,8 @@ _Listener = None
 _OutgoingFilesDict = {}
 _OutgoingQueue = []
 _SendingDelay = 0.01
+_LastServiceRestartTime = 0
+_OpenedStreams = []
 
 _SendStatusFunc = None
 _ReceiveStatusFunc = None
@@ -193,8 +195,15 @@ def alive():
         pid = _CSpaceProcess.pid
     except:
         return False
-    return pid > 0
-
+    if pid == 0:
+        return False
+    proclist = dhnio.find_process(['dhnet.'])
+    if len(proclist) == 0:
+        return False
+    if pid not in proclist:
+        return False 
+    return True
+    
 
 def registered():    
     exists = [ os.path.isfile(settings.CSpaceRememberKeyFile()),
@@ -257,16 +266,18 @@ def send(filename, keyid, description=''):
     transferID = registerTransfer('send', keyid, filename, size, getfilesize(size), description)
     control().send(keyid, filename, transferID, description)
 
+
 def cancel(transferID):
     control().cancel(transferID)
 
 #------------------------------------------------------------------------------ 
 
-def SetOpenedReceivingStreamsNumber(num):
-    control().set_receiving_streams(num)
+def SetOpenedStreamsNumber(num):
+    control().set_opened_streams(num)
     
-def SetOpenedSendingStreamsNumber(num):
-    control().set_sending_streams(num)    
+def opened_opened_streams_list():
+    global _OpenedStreams
+    return _OpenedStreams
 
 #------------------------------------------------------------------------------ 
 
@@ -298,8 +309,9 @@ def unregisterTransfer(transfer_id):
     return True
 
 
-def callback(command, data):
+def serviceResponse(command, data):
     global _ContactStatusNotifyFunc
+    global _OpenedStreams
     # dhnio.Dprint(8, 'transport_cspace.callback %s %s' % (command, str(data)))
     if command == 'sent':
         try:
@@ -308,21 +320,21 @@ def callback(command, data):
                 transferID = int(transferID)
             msg = msg.strip('"')
         except:
-            dhnio.Dprint(2, 'transport_cspace.callback ERROR data=%s' % str(data))
+            dhnio.Dprint(2, 'transport_cspace.serviceResponse ERROR data=%s' % str(data))
             dhnio.DprintException()
             return
         sendingReport(keyid, filename, status, err, msg)
         if transferID:
             unregisterTransfer(transferID)
         else:
-            dhnio.Dprint(2, 'transport_cspace.callback ERROR transferID is None: %s' % str(data))
+            dhnio.Dprint(2, 'transport_cspace.serviceResponse ERROR transferID is None: %s' % str(data))
             
     elif command == 'receive':
         try:
             (keyid, filename, status, err, msg) = data
             msg = msg.strip('"')
         except:
-            dhnio.Dprint(2, 'transport_cspace.callback ERROR data=%s' % str(data))
+            dhnio.Dprint(2, 'transport_cspace.serviceResponse ERROR data=%s' % str(data))
             dhnio.DprintException()
             return
         size = 1
@@ -332,18 +344,26 @@ def callback(command, data):
             except:
                 dhnio.DprintException()
         transferID = registerTransfer('receive', keyid, filename, size, getfilesize(size), '')
-        receivingReport(keyid, filename, status, err, msg)
         unregisterTransfer(transferID)
+        receivingReport(keyid, filename, status, err, msg)
         
     elif command == 'contact':
         if _ContactStatusNotifyFunc:
             try:
                 contact, status = data
             except:
-                dhnio.Dprint(2, 'transport_cspace.callback ERROR data=%s' % str(data))
+                dhnio.Dprint(2, 'transport_cspace.serviceResponse ERROR data=%s' % str(data))
                 dhnio.DprintException()
                 return
             _ContactStatusNotifyFunc(contact, status)
+    
+    elif command == 'streams':
+        try:
+            _OpenedStreams, = data 
+        except:
+            dhnio.Dprint(2, 'transport_cspace.serviceResponse ERROR data=%s' % str(data))
+            dhnio.DprintException()
+            return
     else:
         if _Controller:
             A(command, data) 
@@ -433,7 +453,6 @@ class TransportCspace(automat.Automat):
         elif self.state is 'CONNECTION':
             if event == 'online' :
                 self.state = 'ONLINE'
-                self.doProcessSending(arg)
             elif event == 'offline' :
                 self.state = 'OFFLINE'
             elif event == 'connect-error' or event == 'shutdown' :
@@ -446,6 +465,9 @@ class TransportCspace(automat.Automat):
             elif event == 'shutdown' :
                 self.state = 'DISCONNECTION'
                 self.doDisconnect(arg)
+            elif event == 'restart' :
+                self.state = 'SERVICE'
+                self.doRestart(arg)
         #---OFFLINE---
         elif self.state is 'OFFLINE':
             if event == 'shutdown' :
@@ -457,6 +479,9 @@ class TransportCspace(automat.Automat):
             elif event == 'online' :
                 self.state = 'ONLINE'
                 self.doProcessSending(arg)
+            elif event == 'restart' :
+                self.state = 'SERVICE'
+                self.doRestart(arg)
         #---REGISTER---
         elif self.state is 'REGISTER':
             if event == 'register-failed' :
@@ -507,7 +532,8 @@ class TransportCspace(automat.Automat):
     def doDisconnect(self, arg):
         dhnio.Dprint(6, 'transport_cspace.doDisconnect arg=%s' % str(arg))
         self.shutdownDefer = arg
-        control().offline()
+        if not control().offline():
+            self.automat('offline')
 
     def doProcessSending(self, arg):
         dhnio.Dprint(6, 'transport_cspace.doProcessSending')
@@ -543,12 +569,37 @@ class TransportCspace(automat.Automat):
                 return
         reactor.callLater(0, _register, username, password)
 
+    def doRestart(self, arg):
+        global _Debug
+        global _Controller
+        dhnio.Dprint(6, 'transport_cspace.doRestart')
+        if arg and self.resultDefer is None:
+            self.resultDefer = arg
+        kill()
+        args = ['--logfile', '"%s"' % settings.CSpaceLogFilename(), 
+                '--homedir', '"%s"' % settings.CSpaceDir(),
+                '--tmpdir', '"%s"' % os.path.join(settings.TempDir(), 'cspace-in'),
+                '--parentpid', '%s' % str(os.getpid()),]
+        if _Debug:
+            args.insert(0, '--debug')
+        if run(params=args) is None:
+            self.event('execute-error')
+            self.resultDefer.callback('execute-error')
+        _Controller._server = None
+
+#------------------------------------------------------------------------------ 
+
+def RestartService():
+    global _LastServiceRestartTime
+    if time.time() - _LastServiceRestartTime < 60*10:
+        return
+    A('restart')
+    _LastServiceRestartTime = time.time()
 
 #------------------------------------------------------------------------------ 
 
 class CSpaceServiceController():
     def __init__(self):
-        self._netserver = None
         self._server = None
 
     def _getserviceinfo(self):
@@ -576,116 +627,139 @@ class CSpaceServiceController():
         if server is not None:
             try:
                 result = server.online()
+                dhnio.Dprint(6, 'transport_cspace.online response: %s' % str(result))
+                return True
             except:
-                dhnio.DprintException()
+                dhnio.Dprint(6, 'transport_cspace.online ERROR connecting to XMLRPC')
+                RestartService()
                 return
-            dhnio.Dprint(6, 'transport_cspace.online response: %s' % str(result))
         else:
             dhnio.Dprint(6, "transport_cspace.online ERROR service not started")
+            RestartService()
+        return False
     
     def offline(self):
         server = self._getserver()
         if server is not None:
             try:
                 result = server.offline()
+                dhnio.Dprint(6, 'transport_cspace.offline response: %s' % str(result))
+                return True
             except:
-                dhnio.DprintException()
-                return
-            dhnio.Dprint(6, 'transport_cspace.offline response: %s' % str(result))
+                dhnio.Dprint(6, 'transport_cspace.offline ERROR connecting to XMLRPC')
+                RestartService()
         else:
             dhnio.Dprint(6, "transport_cspace.offline ERROR service not started")
+        return False
 
     def add(self, buddy, keyid):
         server = self._getserver()
         if server is not None:
             try:
                 result = server.add(buddy, keyid)
+                dhnio.Dprint(6, 'transport_cspace.add response: %s' % str(result))
+                return True
             except:
-                dhnio.DprintException()
-                return
-            dhnio.Dprint(6, 'transport_cspace.add response: %s' % str(result))
+                dhnio.Dprint(6, 'transport_cspace.add ERROR connecting to XMLRPC')
+                RestartService()
         else:
             dhnio.Dprint(6, "transport_cspace.add ERROR service not started")
+            RestartService()
+        return False
 
     def remove(self, buddy):
         server = self._getserver()
         if server is not None:
             try:
                 result = server.remove(buddy)
+                dhnio.Dprint(6, 'transport_cspace.remove response: %s' % str(result))
+                return True
             except:
-                dhnio.DprintException()
-                return
-            dhnio.Dprint(6, 'transport_cspace.online response: %s' % str(result))
+                dhnio.Dprint(6, 'transport_cspace.remove ERROR connecting to XMLRPC')
+                RestartService()
         else:
             dhnio.Dprint(6, "transport_cspace.remove ERROR service not started")
-
-#    def list(self):
-#        server = self._getserver()
-#        if server is not None:
-#            buddies = server.list()
-#            if buddies[0] is False:
-#                print "Not connected."
-#                return
-#            for buddystatus in buddies:
-#                print "%s: (%i) %s" % tuple(buddystatus)
-#        else:
-#            dhnio.Dprint(6, "transport_cspace.list ERROR service not started")
+            RestartService()
+        return False
 
     def probe(self, buddy):
         server = self._getserver()
         if server is not None:
             try:
                 result = server.probe(buddy)
+                dhnio.Dprint(6, 'transport_cspace.probe response: %s' % str(result))
+                return True
             except:
-                dhnio.DprintException()
-                return
-            dhnio.Dprint(6, 'transport_cspace.online response: %s' % str(result))
+                dhnio.Dprint(6, 'transport_cspace.probe ERROR connecting to XMLRPC')
+                RestartService()
         else:
             dhnio.Dprint(6, "transport_cspace.probe ERROR service not started")
+            RestartService()
+        return False
 
     def send(self, keyID, filename, transferID, description):
         server = self._getserver()
         if server is not None:
             try:
                 server.send(str(keyID), unicode(filename).encode('utf-8'), transferID, description)
+                # dhnio.Dprint(6, 'transport_cspace.send response: %s' % str(result))
+                return True
             except:
-                dhnio.DprintException()
-                return
+                dhnio.Dprint(6, 'transport_cspace.send ERROR connecting to XMLRPC')
+                unregisterTransfer(transferID)
+                sendingReport(keyID, filename, 'failed', None, 'failed connect to XMLRPC')
+                RestartService()
         else:
             dhnio.Dprint(6, "transport_cspace.send ERROR service not started")
+            unregisterTransfer(transferID)
+            sendingReport(keyID, filename, 'failed', None, 'XMLRPC is offfailed connect to XMLRPC')
+            RestartService()
+        return False
 
     def cancel(self, transferID):
         server = self._getserver()
         if server is not None:
             try:
                 server.cancel(transferID)
+                return True
             except:
-                dhnio.DprintException()
-                return
+                dhnio.Dprint(6, 'transport_cspace.cancel ERROR connecting to XMLRPC')
+                unregisterTransfer(transferID)
+                RestartService()
         else:
             dhnio.Dprint(6, "transport_cspace.cancel ERROR service not started")
+            RestartService()
+        return False
         
-    def set_receiving_streams(self, num):
+    def set_opened_streams(self, num):
         server = self._getserver()
         if server is not None:
             try:
-                server.set_receiving_streams(num)
+                server.set_opened_streams(num)
+                dhnio.Dprint(6, 'transport_cspace.set_opened_streams %s' % str(num))
+                return True
             except:
-                dhnio.DprintException()
-                return
+                dhnio.Dprint(6, 'transport_cspace.set_opened_streams ERROR connecting to XMLRPC')
+                RestartService()
         else:
-            dhnio.Dprint(6, "transport_cspace.set_receiving_streams ERROR service not started")
+            dhnio.Dprint(6, "transport_cspace.set_opened_streams ERROR service not started")
+            RestartService()
+        return False
 
-    def set_sending_streams(self, num):
-        server = self._getserver()
-        if server is not None:
-            try:
-                server.set_sending_streams(num)
-            except:
-                dhnio.DprintException()
-                return
-        else:
-            dhnio.Dprint(6, "transport_cspace.set_sending_streams ERROR service not started")
+#    def set_sending_streams(self, num):
+#        server = self._getserver()
+#        if server is not None:
+#            try:
+#                server.set_sending_streams(num)
+#                dhnio.Dprint(6, 'transport_cspace.set_sending_streams %s' % str(num))
+#                return True
+#            except:
+#                dhnio.Dprint(6, 'transport_cspace.set_sending_streams ERROR connecting to XMLRPC')
+#                RestartService()
+#        else:
+#            dhnio.Dprint(6, "transport_cspace.set_sending_streams ERROR service not started")
+#            RestartService()
+#        return False
 
     def stop(self):
         server = self._getserver()
@@ -693,8 +767,10 @@ class CSpaceServiceController():
             try:
                 server.stop()
                 dhnio.Dprint(6, "transport_cspace.stop service stopped")
+                return True
             except:
                 pass
+        return False
         
 #------------------------------------------------------------------------------ 
 
@@ -710,15 +786,18 @@ class CSpaceServiceProtocol(protocol.ProcessProtocol):
                     try:
                         data = eval(data)
                     except:
-                        pass
+                        dhnio.Dprint(6, str(data))
+                        dhnio.DprintException()
             except:
                 dhnio.Dprint(2, 'transport_cspace.CSpaceServiceProtocol.outReceived ERROR: %s' % line)
                 dhnio.DprintException()
             # dhnio.Dprint(6, 'transport_cspace.CSpaceServiceProtocol.outReceived %s %s' % (command, str(data)))
-            callback(command.lstrip('[').rstrip(']'), data)
+            serviceResponse(command.lstrip('[').rstrip(']'), data)
+            
     def errReceived(self, inp):
         for line in inp.splitlines():
             dhnio.Dprint(2, line)
+            
     def processEnded(self, reason):
         if self.process_finished_callback:
             self.process_finished_callback(reason)

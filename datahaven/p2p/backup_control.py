@@ -191,6 +191,7 @@ def IncomingSupplierBackupIndex(packet):
         input.seek(0)
     except:
         dhnio.Dprint(2, 'backup_control.IncomingSupplierBackupIndex ERROR reading data from %s' % packet.RemoteID)
+        dhnio.Dprint(2, '\n' + padded_data)
         dhnio.DprintException()
         try:
             input.close()
@@ -203,7 +204,7 @@ def IncomingSupplierBackupIndex(packet):
         backup_fs.Calculate()
         WriteIndex()
         # TODO repaint a GUI
-        dhnio.Dprint(2, 'backup_control.IncomingSupplierBackupIndex updated to revision %d from %' % (revision(), packet.RemoteID))
+        dhnio.Dprint(2, 'backup_control.IncomingSupplierBackupIndex updated to revision %d from %s' % (revision(), packet.RemoteID))
     input.close()
     backup_db_keeper.A('incoming-db-info', packet)
         
@@ -559,10 +560,11 @@ def test():
     import pprint
     pprint.pprint(backup_fs.fsID())
     pprint.pprint(backup_fs.fs())
+    print backup_fs.GetByID('0')
     # pprint.pprint(backup_fs.WalkByID('0/0/2/19/F20140106100849AM'))
     # for pathID, localPath, item in backup_fs.IterateIDs():
     #     print pathID, misc.unicode_to_str_safe(localPath)
-    backup_fs.TraverseByIDSorted(lambda x, y, z: sys.stdout.write('%s %s\n' % (x,misc.unicode_to_str_safe(y))))
+    # backup_fs.TraverseByIDSorted(lambda x, y, z: sys.stdout.write('%s %s\n' % (x,misc.unicode_to_str_safe(y))))
     
 
     

@@ -77,7 +77,8 @@ def override_dict(d):
 #---NUMBERS---------------------------------------------------------------------------
 
 def DefaultPrivateKeySize():
-    return 1024
+    # return 1024
+    return 4096
 
 # Dropbox have a 10$/month for 100-500 GB
 # so let's have 10$ for 1Tb. this is 0.01 
@@ -112,7 +113,7 @@ def MaxPacketsOutstanding():
 # if sending below this speed - we count this supplier as failed
 # if we sending too slow to all nodes - it's our problems
 def SendingSpeedLimit():
-    return 3 * 1024 # 1KB/sec is about 3.5MB/hour
+    return 5 * 1024 # 1KB/sec is about 3.5MB/hour
 
 # in kilo bytes per second
 def DefaultBandwidthInLimit():
