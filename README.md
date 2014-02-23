@@ -1,5 +1,5 @@
-datahaven
-=========
+DataHaven.NET
+=============
 
 DataHaven.NET is a peer to peer online backup utility.
 
@@ -10,6 +10,7 @@ The redundancy in backup makes it so if someone loses your data, you can rebuild
 All your data is encrypted before it leaves your computer with a private key your computer generates. No one else can read your data, even DataHaven.NET! Recover data is only one way - download the necessary pieces from computers of other peers and decrypt them with your private key.
 
 DataHaven.NET is written in Python using pure Twisted framework.
+
 
 
 Install
@@ -62,4 +63,7 @@ python-imaging
 
 
 
- 
+Wiki
+====
+
+http://datahaven.net/wiki
