@@ -3040,7 +3040,6 @@ class AutomatsPage(Page):
     pagename = _PAGE_AUTOMATS
     def renderPage(self, request):
         src = ''
-        # for index, object in automats.get_automats_by_index().items():
         for index, object in automat.objects().items():
             src += html_comment('  %s %s %s' % (
                 str(index).ljust(4), 
@@ -7554,15 +7553,15 @@ class SettingsTreeNode(Page):
                 else:
                     misc.ClearAutorunWindows()
                     
-        if self.path == 'folder.folder-customers':
-            if old_value is not None:
-                result = misc.MoveFolderWithFiles(old_value, settings.getCustomersFilesDir(), True)
-                dhnio.Dprint(2, 'misc.MoveFolderWithFiles returned ' + result)
+#        if self.path == 'folder.folder-customers':
+#            if old_value is not None:
+#                result = misc.MoveFolderWithFiles(old_value, settings.getCustomersFilesDir(), True)
+#                dhnio.Dprint(2, 'misc.MoveFolderWithFiles returned ' + str(result))
             
-        if self.path == 'folder.folder-backups':
-            if old_value is not None:
-                result = misc.MoveFolderWithFiles(old_value, settings.getLocalBackupsDir(), True)
-                dhnio.Dprint(2, 'misc.MoveFolderWithFiles returned ' + result)
+#        if self.path == 'folder.folder-backups':
+#            if old_value is not None:
+#                result = misc.MoveFolderWithFiles(old_value, settings.getLocalBackupsDir(), True)
+#                dhnio.Dprint(2, 'misc.MoveFolderWithFiles returned ' + result)
                 
         if self.path == 'backup.backup-block-size':
             settings.setBackupBlockSize(self.value)

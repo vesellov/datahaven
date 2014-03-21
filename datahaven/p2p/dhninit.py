@@ -242,11 +242,6 @@ def init_modules():
     webcontrol.OnInitFinalDone()
 
 
-# def shutdown_automats():
-    # import lib.automats as automats
-    # for index, A in automats.get_automats_by_index().items():
-    #     if A.name.startswith()
-
 def shutdown(x=None):
     global initdone
     dhnio.Dprint(2, "dhninit.shutdown " + str(x))

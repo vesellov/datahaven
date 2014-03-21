@@ -3,6 +3,7 @@
 #      http://datahaven.net/terms_of_use.html
 #    All rights reserved.
 
-
-# __all__ = ["shtoom", "cspace", "cspaceapps", "nitro", ]
+"""
+Contains various functions related to the Client side code, a Central server, Identity server.
+"""
 

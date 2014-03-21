@@ -6,24 +6,34 @@
 #      http://datahaven.net/terms_of_use.html
 #    All rights reserved.
 #
-#  We only talk with limited sets of people and in limited ways for each type:
-#   1)  datahaven.net    - central command
-#   2)  supplierids      - ids for nodes who supply us with storage services (customerservice.py stuff)
-#   3)  customerids      - ids for nodes we provide customerservice.py stuff for
-#   4)  scrubberids      - only activated for customers who are offline more than 30 hours (or something)
-#                             Rights the same as that customer number they scrub for
-#   5)  correspondentids - ids for people we accept messages from
-#
-#  We keep around URLIDs and Identities for each.
-#  We can get all the info from datahaven.net
-#
-#  We get a list of customers and suppliers from datahaven.net
-#  We have to get an identity record for each of these contacts.
-#  We have to record bandwidth between us and each contact for
-#    each 24 hour period.
-#  We have to report bandwidth sometime in the following 24 hour period.
-#  From User/GUI or backup_monitor.py we might replace one contact at a time.
-#
+
+"""
+This module to store and work with user IDs.
+
+User ID has the following form:
+    
+    http://identity.datahaven.net/veselin.xml
+    
+See lib/identity.py for more details about user identities. 
+
+We only talk with limited sets of people and in limited ways for each type:
+ 1)  datahaven.net    - central command
+ 2)  suppliers        - ID's for nodes who supply us with storage services 
+ 3)  customer         - ID's for nodes we provide our storage
+ 4)  scrubber         - only activated for customers who are offline more than 30 hours (or something)
+                           Rights the same as that customer number they scrub for
+ 5)  correspondent    - ids for people we accept messages from
+
+We keep around URLIDs and Identities for each.
+We can get all the info from datahaven.net
+
+We get a list of customers and suppliers from datahaven.net
+We have to get an identity record for each of these contacts.
+We have to record bandwidth between us and each contact for each 24 hour period.
+We have to report bandwidth sometime in the following 24 hour period.
+From User/GUI or backup_monitor.py we might replace one contact at a time.
+
+"""
 
 
 import os
@@ -49,15 +59,16 @@ _RequestFailsDict = {}
 
 #------------------------------------------------------------------------------ 
 
-#  We read from disk and if we have all the info we are set.
-#  If we don't have enough, then we have to ask DHN to listcontacts and use
-#  that list to get and then store all the identities for our contacts.
 def init():
+    """
+    We read from disk and if we have all the info we are set.
+    If we don't have enough, then we have to ask DHN to list contacts and use
+    that list to get and then store all the identities for our contacts.
+    """
     dhnio.Dprint(4, "contacts.init ")
     contactsdb.load_suppliers(settings.SupplierIDsFilename())
     contactsdb.load_customers(settings.CustomerIDsFilename())
     contactsdb.load_correspondents(settings.CorrespondentIDsFilename())
-    # contactsdb.add_correspondent(misc.getLocalID())
 
 #------------------------------------------------------------------------------ 
 
@@ -79,8 +90,11 @@ def SetCorrespondentsChangedCallback(cb):
 
 #-------------------------------------------------------------------------------
 
-#  Sometimes we want to loop through all the IDs we make contact with
 def getContactIDs():
+    """
+    Return a list of all contacts - a union of suppliers, customers and correspondents.
+    Sometimes we want to loop through all the IDs we make contact with.
+    """
     return contactsdb.contacts()
 
 def IsCustomer(custid):

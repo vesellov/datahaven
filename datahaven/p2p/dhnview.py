@@ -74,6 +74,12 @@ SettingsDict = {
     'ToolbarIsVisible': '%s' % ToolbarIsVisible,
     }
 
+"""
+Here is a labels displayed in the status line of the GUI,
+so user can see what is going on at the moment.
+When given State Machines changes its state the event is fired and another label is taken from that dictionary
+and printed in the GUI.
+"""   
 StatesDict = {
     'init at startup':          (False, 'beginning'),
     'init local':               (False, 'local settings initialization'),

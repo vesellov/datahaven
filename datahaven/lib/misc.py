@@ -1334,7 +1334,7 @@ def ExplorePathInOS(filepath):
 
 def MoveFolderWithFiles(current_dir, new_dir, remove_old=False):
     if os.path.abspath(current_dir) == os.path.abspath(new_dir):
-        return
+        return None
     
     current = cmdLineQuote(current_dir)
     new = cmdLineQuote(new_dir)
@@ -1368,6 +1368,7 @@ def MoveFolderWithFiles(current_dir, new_dir, remove_old=False):
             return 'ok'
         
     except:
+        dhnio.DprintException()
         return 'failed'
     
     return 'ok'

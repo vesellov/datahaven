@@ -631,11 +631,11 @@ def DefaultQ2QServer():
     return 'datahaven.net'
 
 def MoneyServerName():
-##    return 'localhost'
-##    return '67.207.147.183' #central
-##    return "central.net"
-##    return "central.datahaven.net"
-##    return "209.59.119.34" #offshore.ai
+#    return 'localhost'
+#    return '67.207.147.183' #central
+#    return "central.net"
+#    return "central.datahaven.net"
+#    return "209.59.119.34" #offshore.ai
 #    return 'datahaven.net'
     return "offshore.ai"
 

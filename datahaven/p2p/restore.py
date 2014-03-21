@@ -359,7 +359,6 @@ class restore(automat.Automat):
         events.info('restore', '%s restored successfully' % self.BackupID)
     
     def doDestroyMe(self, arg):
-        # automats.get_automats_by_index().pop(self.index)
         automat.objects().pop(self.index)
         collected = gc.collect()
         # dhnio.Dprint(6, 'restore.doDestroyMe collected %d objects' % collected)

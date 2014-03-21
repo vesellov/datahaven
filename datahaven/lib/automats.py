@@ -8,6 +8,11 @@
 #
 #
 
+"""
+This module is to keep track of changing states of State Machines.
+It also remember the current `global` state of the program - this a stats of a several most important automats.
+"""
+
 import os
 import sys
 
@@ -60,6 +65,12 @@ _GlobalStateNotifyFunc = None
 #------------------------------------------------------------------------------
 
 def set_global_state(st):
+    """
+    This method is called from State Machines when `state` is changed:
+        automats.set_global_state('CENTRAL ' + newstate)
+    So `st` is a string like: 'CENTRAL CONNECTED'.
+    `_GlobalStateNotifyFunc` can be used to keep track of changing program states.
+    """
     global _GlobalState
     global _GlobalStateNotifyFunc
     oldstate = _GlobalState
@@ -73,27 +84,37 @@ def set_global_state(st):
 
 
 def get_global_state():
+    """
+    Return the current `global state`, for example:
+        P2P CONNECTED
+    """
     global _GlobalState
     dhnio.Dprint(6, 'automats.get_global_state return [%s]' % _GlobalState)
     return _GlobalState
 
 
 def get_global_state_label():
+    """
+    Return a label describing current global state, for example:
+        'checking network interfaces'
+    """
     global _GlobalState
     global _StatesDict
     return _StatesDict.get(_GlobalState.replace('_', ' ').lower(), '')
 
 
-def get_automats_by_index():
-    return automat.objects()
-
-
 def SetGlobalStateNotifyFunc(f):
+    """
+    Set callback to catch a global state changed event. 
+    """
     global _GlobalStateNotifyFunc
     _GlobalStateNotifyFunc = f
 
     
 def SetSingleStateNotifyFunc(f):
+    """
+    Set callback to catch state change of any automat 
+    """
     automat.SetStateChangedCallback(f)
 
 #------------------------------------------------------------------------------

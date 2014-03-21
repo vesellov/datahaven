@@ -6,6 +6,10 @@
 #      http://datahaven.net/terms_of_use.html
 #    All rights reserved.
 
+"""
+A small interface between client code and BitCoind wallet using bitcoinrpc.
+"""
+
 import os
 
 try:
@@ -32,9 +36,15 @@ _Balance = None
 #------------------------------------------------------------------------------ 
 
 def installed():
+    """
+    If bitcoinrpc import were failed this is False.
+    """
     return _API_is_installed
 
 def init(username, password, host, port='8332', local=False, configfile=os.path.expanduser('~/.bitcoin/bitcoin.conf')):
+    """
+    Check bitcoinrpc is installed and create connection to BitCoin server - local or remote
+    """
     if not installed():
         dhnio.Dprint(4, 'bitcoin.init WARNING module bitcoin-python is not installed, skip.')
         return
@@ -58,6 +68,9 @@ def init(username, password, host, port='8332', local=False, configfile=os.path.
     # update()
 
 def shutdown():
+    """
+    Shutdown connection with BitCoin server
+    """
     if not installed():
         dhnio.Dprint(4, 'bitcoin.shutdown WARNING module bitcoin-python is not installed, skip.')
         return
@@ -68,6 +81,9 @@ def shutdown():
     _Connection = None
 
 def connection():
+    """
+    Return connection object to access XMLRPC interface with BitCoin server
+    """
     if not installed():
         dhnio.Dprint(4, 'bitcoin.connection WARNING module bitcoin-python is not installed, skip.')
         raise Exception, 'module bitcoinrpc is not installed'
@@ -78,6 +94,9 @@ def connection():
     return _Connection
 
 def update(callback=None):
+    """
+    Request current account balance from BitCoin server
+    """
     global _Connection
     if _Connection is None:
         dhnio.Dprint(4, 'bitcoin.update WARNING connection is not initialized, skip.')
@@ -99,10 +118,16 @@ def update(callback=None):
     reactor.callInThread(go)
     
 def accounts():
+    """
+    Return a list of user's known BitCoin accounts
+    """
     global _Accounts
     return _Accounts
 
 def balance():
+    """
+    Return user's known BitCoin balance
+    """
     if not installed():
         return 'not available'
     global _Balance
