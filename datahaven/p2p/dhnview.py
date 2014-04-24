@@ -23,7 +23,10 @@ import wx
 import wx.html
 
 from twisted.internet import wxreactor
-wxreactor.install()
+try:
+    wxreactor.install()
+except:
+    pass
 
 from twisted.internet import reactor
 

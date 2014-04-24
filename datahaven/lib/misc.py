@@ -7,6 +7,12 @@
 #    All rights reserved.
 #
 
+"""
+A set of different methods across the code.
+ 
+TODO 
+    Really need to do some refactoring here - too many things in one place.
+"""
 
 import os
 import sys
@@ -29,7 +35,6 @@ from twisted.spread import jelly
 from twisted.python.win32 import cmdLineQuote
 from twisted.internet.defer import fail
 
-import nonblocking
 import dhnio
 import settings
 import identity
@@ -39,6 +44,8 @@ import dhnpacket
 import packetid
 
 
+#------------------------------------------------------------------------------ 
+
 #if __name__ == '__main__':
     #dirpath = os.path.dirname(os.path.abspath(__file__))
     #sys.path.insert(0, os.path.abspath(os.path.join(dirpath, '..', '..')))
@@ -47,9 +54,7 @@ import packetid
     #sys.modules['datahaven.lib.dhnpacket'].dhnpacket = str #dhnpacket.dhnpacket
     #import datahaven.lib.dhnpacket as dhnpacket
 
-
 #-------------------------------------------------------------------------------
-
 
 _RemoveAfterSent = True
 
@@ -72,15 +77,25 @@ _AttenuationFactor = 1.1
 #-------------------------------------------------------------------------------
 
 def init():
+    """
+    Will be called in main thread at start up.
+    Can put here some minor things if needed.
+    """
     dhnio.Dprint(4, 'misc.init')
 
 #-------------------------------------------------------------------------------
 
 def isLocalIdentityReady():
+    """
+    Return True if local identity object already initialized and stored in memory. 
+    """
     global _LocalIdentity
     return _LocalIdentity is not None
 
 def setLocalIdentity(ident):
+    """
+    Set local identity object in the memory.  
+    """
     global _LocalIdentity
     global _LocalIDURL
     global _LocalName
@@ -89,18 +104,25 @@ def setLocalIdentity(ident):
     _LocalName = _LocalIdentity.getIDName()
 
 def setLocalIdentityXML(idxml):
+    """
+    Construct identity object from XML string and save it to the memory.
+    """
     global _LocalIdentity
     _LocalIdentity = identity.identity(xmlsrc=idxml)
 
 def getLocalIdentity():
-    """return my identity object"""
+    """
+    Return my identity object.
+    """
     global _LocalIdentity
     if not isLocalIdentityReady():
         loadLocalIdentity()
     return _LocalIdentity
 
 def getLocalID():
-    """return my IDURL""" 
+    """
+    Return my IDURL.
+    """ 
     global _LocalIDURL
     if _LocalIDURL is None:
         localIdent = getLocalIdentity()
@@ -109,7 +131,9 @@ def getLocalID():
     return _LocalIDURL
 
 def getIDName():
-    """return my account name (without '.xml')"""
+    """
+    Return my account name, this is a filename part of IDURL without '.xml'.
+    """
     global _LocalName
     if _LocalName is None:
         if isLocalIdentityReady():
@@ -117,6 +141,11 @@ def getIDName():
     return _LocalName
 
 def loadLocalIdentity():
+    """
+    The core method.
+    The file [DataHaven.NET data dir]/metadata/localidentity keeps the user identity in XML format.
+    Do read the local file and set into object in memory.  
+    """
     global _LocalIdentity
     global _LocalIDURL
     global _LocalName
@@ -139,6 +168,10 @@ def loadLocalIdentity():
     dhnio.Dprint(6, "misc.loadLocalIdentity my name is [%s]" % lid.getIDName())
 
 def saveLocalIdentity():
+    """
+    Save identity object from memory into local file.
+    Do sign the identity than serialize to write to the file.
+    """
     global _LocalIdentity
     if not isLocalIdentityReady():
         dhnio.Dprint(2, "misc.saveLocalIdentity ERROR localidentity not exist!")
@@ -152,18 +185,31 @@ def saveLocalIdentity():
 #------------------------------------------------------------------------------ 
 
 def readLocalIP():
+    """
+    Read local IP stored in the file [DataHaven.NET data dir]/metadata/localip.
+    """
     return dhnio.ReadBinaryFile(settings.LocalIPFilename())
 
 def readExternalIP():
+    """
+    Read external IP stored in the file [DataHaven.NET data dir]/metadata/externalip.
+    """
     return dhnio.ReadBinaryFile(settings.ExternalIPFilename())
 
 def readSupplierData(idurl, filename):
+    """
+    Read a file from [DataHaven.NET data dir]/suppliers/[IDURL] folder.
+    The file names right now is ['connected', 'disconnected', 'listfiles']. 
+    """
     path = settings.SupplierPath(idurl, filename)
     if not os.path.isfile(path):
         return ''
     return dhnio.ReadTextFile(path)
 
 def writeSupplierData(idurl, filename, data):
+    """
+    Writes to a config file for given supplier.
+    """
     dirPath = settings.SupplierPath(idurl)
     if not os.path.isdir(dirPath):
         os.makedirs(dirPath)
@@ -172,14 +218,12 @@ def writeSupplierData(idurl, filename, data):
 
 #-------------------------------------------------------------------------------
 
-# let's try to make backupID as a filepath
-# and keep files on remote suppliers into directory tree.
-# so we will have something like remote-distributed file system
-# some links to learn
-# http://en.wikipedia.org/wiki/Filename 
-# http://nedbatchelder.com/blog/201106/filenames_with_accents.html
-# http://wiki.apache.org/subversion/NonNormalizingUnicodeCompositionAwareness
 def NewBackupID(time_st=None):
+    """
+    BackupID is just a string representing time and date.
+    Symbol "F" is placed at the start to identify that this is a FULL backup.
+    We have a plans to provide INCREMENTAL backups also. 
+    """
     if time_st is None:
         time_st = time.localtime()
     ampm = time.strftime("%p", time_st)
@@ -187,10 +231,12 @@ def NewBackupID(time_st=None):
         dhnio.Dprint(2, 'misc.NewBackupID WARNING time.strftime("%p") returns empty string')
         ampm = 'AM' if time.time() % 86400 < 43200 else 'PM'
     result = "F" + time.strftime("%Y%m%d%I%M%S", time_st) + ampm
-    # dhnio.Dprint(10, 'misc.NewBackupID ' + result)
     return result
 
 def TimeFromBackupID(backupID):
+    """
+    Reverse method - return a date and time from given BackupID.
+    """
     try:
         if backupID.endswith('AM') or backupID.endswith('PM'):
             ampm = backupID[-2:]
@@ -206,8 +252,11 @@ def TimeFromBackupID(backupID):
         dhnio.DprintException()
         return None
 
-# next functions are to come up with a sorted list of backup ids (dealing with AM/PM)
 def modified_version(a):
+    """
+    Next functions are to come up with a sorted list of backup ids (dealing with AM/PM).
+    This method make a number for given BackupID - used to compare two BackupID's.
+    """
     try:
         if a.endswith('AM') or a.endswith('PM'):
             int_a = int(a[1:-2])
@@ -227,9 +276,19 @@ def modified_version(a):
     return int_a + int_b
 
 def version_compare(version1, version2):
+    """
+    Compare two BackupID's, I start using another term for BackupID not so long ago: `version`.
+    I decided to create a complex ID to identify the data on remote machine.:
+        <path>/<version>/<packetName>
+    This way same data can have different versions.
+    See `lib.packetid` module for more info.
+    """
     return cmp(modified_version(version1), modified_version(version2))
 
 def backup_id_compare(backupID1, backupID2):
+    """
+    Compare two 'complex' backupID's: at first compare paths, than version.
+    """
     if isinstance(backupID1, tuple):
         backupID1 = backupID1[0]
         backupID2 = backupID2[0]
@@ -242,10 +301,16 @@ def backup_id_compare(backupID1, backupID2):
     return version_compare(version1, version2)
 
 def sorted_backup_ids(backupIds, reverse=False):
+    """
+    Sort a list of backupID's.
+    """
     sorted_ids = sorted(backupIds, backup_id_compare, reverse=reverse)
     return sorted_ids
 
 def sorted_versions(versions, reverse=False):
+    """
+    Sort a list of versions.
+    """
     sorted_versions_list = sorted(versions, version_compare, reverse=reverse)
     return sorted_versions_list
 
@@ -256,6 +321,9 @@ BASE_LIST = BASE_ALPHABET
 BASE_DICT = dict((c, i) for i, c in enumerate(BASE_LIST))
 
 def base_decode(string, reverse_base=BASE_DICT):
+    """
+    Not used right now, I was playing with file paths on remove peers.
+    """
     return base64.decodestring(string)
 #    length = len(reverse_base)
 #    ret = 0
@@ -264,6 +332,9 @@ def base_decode(string, reverse_base=BASE_DICT):
 #    return ret
 
 def base_encode(string, base=BASE_LIST):
+    """
+    Not used at the moment.
+    """
     return base64.encodestring(string)
 #    length = len(base)
 #    ret = ''
@@ -273,6 +344,12 @@ def base_encode(string, base=BASE_LIST):
 #    return ret
 
 def FilePathToBackupID(filepath):
+    """
+    The idea was to hide the original file and folders names on suppliers machines but keep the directory structure.
+    Finally I came to index file wich is encrypted and all data is stored in the same directory tree, 
+    but files and folders names are replaced with numbers.
+    Not used at the moment.
+    """
     # be sure the string is in unicode
     fp = dhnio.portablePath(filepath)
     # now convert to string with char codes as numbers
@@ -308,6 +385,9 @@ def FilePathToBackupID(filepath):
     return result
 
 def BackupIDToFilePath(backupID, decompress=False):
+    """
+    Not used.
+    """
     result = ''
     part = ''
     ch = ''
@@ -351,29 +431,45 @@ def BackupIDToFilePath(backupID, decompress=False):
 #------------------------------------------------------------------------------ 
 
 def DigitsOnly(input, includes=''):
+    """
+    Very basic method to convert string to number.
+    This returns same string but with digits only.
+    """
     return ''.join([c for c in input if c in '0123456789' + includes])
 
+def IsDigitsOnly(input):
+    """
+    Return True if `input` string contains only digits. 
+    """
+    for c in input:
+        if c not in '0123456789':
+            return False
+    return True
+
 def ToInt(input, default=0):
+    """
+    Convert a string to number using built-in int() method.
+    """
     try:
         return int(input)
     except:
         return default
     
 def ToFloat(input, default=0.0):
+    """
+    Convert a string to number using built-in float() method.
+    """
     try:
         return float(input)
     except:
         return default
 
-def IsDigitsOnly(input):
-    for c in input:
-        if c not in '0123456789':
-            return False
-    return True
-
 #------------------------------------------------------------------------------ 
 
 def ValidUserName(username):
+    """
+    A method to validate account name entered by user.
+    """
     if len(username) < settings.MinimumUsernameLength():
         return False
     if len(username) > settings.MaximumUsernameLength():
@@ -388,6 +484,9 @@ def ValidUserName(username):
     return True
 
 def ValidEmail(email, full_check=True):
+    """
+    A method to validate typed email address.
+    """
     regexp = '^[\w\-\.\@]*$'
     if re.match(regexp,email) == None:
         return False
@@ -412,6 +511,9 @@ def ValidEmail(email, full_check=True):
     return True
 
 def ValidPhone(value):
+    """
+    A method to validate typed phone number.
+    """
     regexp = '^[ \d\-\+]*$'
     if re.match(regexp,value) == None:
         return False
@@ -420,6 +522,9 @@ def ValidPhone(value):
     return True
 
 def ValidName(value):
+    """
+    A method to validate user name.
+    """
     regexp = '^[\w\-]*$'
     if re.match(regexp, value) == None:
         return False
@@ -428,6 +533,9 @@ def ValidName(value):
     return True
 
 def MakeValidHTMLComment(text):
+    """
+    Keeps only ascii symbols of the string.
+    """
     ret = ''
     for c in text:
         if c in set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-+*/=_()[]{}:;,.?!@#$%|~ "):
@@ -435,10 +543,12 @@ def MakeValidHTMLComment(text):
     return ret
 
 def ValidateBitCoinAddress(strAddr):
-    """ does simple validation of a bitcoin address. 
-    param : strAddr : an ASCII or unicode string, of a bitcoin public address.
-    returns : boolean, indicating that the address has a correct format.
-    http://www.rugatu.com/questions/3255/anybody-has-python-code-to-verifyvalidate-bitcoin-address"""
+    """ 
+    Does simple validation of a bitcoin address. 
+        :param strAddr: an ASCII or unicode string, of a bitcoin public address.
+        :return boolean: indicating that the address has a correct format.
+    http://www.rugatu.com/questions/3255/anybody-has-python-code-to-verifyvalidate-bitcoin-address
+    """
     # The first character indicates the "version" of the address.
     CHARS_OK_FIRST = "123"
     # alphanumeric characters without : l I O 0
@@ -457,59 +567,85 @@ def ValidateBitCoinAddress(strAddr):
 
 #------------------------------------------------------------------------------ 
 
-# For some things we need to have files which are round sizes
-# for example some encryption needs files that are multiples of 8 bytes
-# This function rounds filename up to the next multiple of stepsize
 def RoundupFile(filename, stepsize):
+    """
+    For some things we need to have files which are round sizes, 
+    for example some encryption needs files that are multiples of 8 bytes.
+    This function rounds file up to the next multiple of step size.
+    """
     try:
         size = os.path.getsize(filename)
     except:
         return
-    mod = size % stepsize;
-    increase=0;
+    mod = size % stepsize
+    increase = 0
     if mod > 0:
         increase = stepsize - mod
-        file = open(filename,'a')         # append
-#        for i in range (0, increase):
-#            file.write(' ')
-        file.write(' '*increase)
+        file = open(filename, 'a')         
+        file.write(' ' * increase)
         file.close()
 
 def RoundupString(data, stepsize):
+    """
+    Do same effect like a previous method, but work with strings, not files.
+    """
     size = len(data)
     mod = size % stepsize
     increase = 0
     addon = ''
     if mod > 0:
         increase = stepsize-mod
-#        for i in range(0,increase):
-#            addon = addon + ' '
         addon = ' ' * increase
     return data + addon
 
 def AddNL(s):
+    """
+    Just return a same string but with '\n' symbol at the end. 
+    """
     return s + "\n"
 
 def Data():
+    """
+    An alias for Data packets.
+    """
     return "Data"
 
 def Parity():
+    """
+    An alias for Parity packets.
+    """
     return "Parity"
 
-# Have had some troubles with jelly/banana
-# Plan to move to my own serialization of objects but leaving this here for now
 def BinaryToAscii(input):
+    """
+    Not used right now.
+    Have had some troubles with jelly/banana.
+    Plan to move to my own serialization of objects but leaving this here for now.
+    """
     return base64.encodestring(input)
 
 def AsciiToBinary(input):
+    """
+    Uses built-in method `base64.decodestring`.
+    """
     return base64.decodestring(input)
 
 def ObjectToString(input):
+    """
+    The core method.
+    Create a string from an object in memory, uses `twisted.spread`.
+    Used to serialize objects on disk.  
+    """
     banana.setPrefixLimit(200000000)                              # 200 MB is ok - does not work
     banana.SIZE_LIMIT = 200000000                                 # PREPRO not sure this is nice
     return banana.encode(jelly.jelly(input))
 
 def StringToObject(input):
+    """
+    This is a reverse method to `ObjectToString`.
+    Create a real python object in memory from `input` string.
+    Uses `twisted.spread`, this is core method.
+    """
     banana.setPrefixLimit(200000000)                              # 200 MB is ok
     banana.SIZE_LIMIT = 200000000                                 # PREPRO not sure this is nice
     if len(input) == 0:
@@ -518,25 +654,13 @@ def StringToObject(input):
     try:
         bananaDecode = banana.decode(input)
     except:
-#         try:
-#             _data = input
-#             ver, x, _data = _data.partition(' ')
-#             cmd, x, _data = _data.partition(' ')
-#             portorlength, x, _data = _data.partition(' ')
-#             int(ver)
-#             # assert cmd in ['length', 'port']
-#             int(portorlength)
-#             input = _data
-#             bananaDecode = banana.decode(input)
-#         except:
-            if len(input) > 0:
-                fd, filename = tmpfile.make('other', '', 'banana.error-')
-                os.write(fd, input)
-                os.close(fd)
-            dhnio.Dprint(1, 'misc.StringToObject ERROR in banana.decode, data length=%d' % len(input))
-            dhnio.DprintException()
-            return None
-    
+        if len(input) > 0:
+            fd, filename = tmpfile.make('other', '', 'banana.error-')
+            os.write(fd, input)
+            os.close(fd)
+        dhnio.Dprint(1, 'misc.StringToObject ERROR in banana.decode, data length=%d' % len(input))
+        dhnio.DprintException()
+        return None
     try:
         # works for 384 bit RSA keys
         unjellyObject = jelly.unjelly(bananaDecode)
@@ -570,12 +694,23 @@ def StringToObject(input):
     return unjellyObject
 
 def ObjectToAscii(input):
+    """
+    Not used.
+    """
     return BinaryToAscii(ObjectToString(input))
 
 def AsciiToObject(input):
+    """
+    Not used.
+    """
     return StringToObject(AsciiToBinary(input))              # works for 384 bit RSA keys
 
+#------------------------------------------------------------------------------ 
+
 def pack_url_param(s):
+    """
+    A wrapper for built-in `urllib.quote` method.
+    """
     try:
         return urllib.quote(s)
     except:
@@ -586,6 +721,9 @@ def pack_url_param(s):
     return s
 
 def unpack_url_param(s, default=None):
+    """
+    A wrapper for built-in `urllib.unquote` method.
+    """
     if s is None or s == '':
         if default is not None:
             return default
@@ -597,30 +735,52 @@ def unpack_url_param(s, default=None):
         return default
 
 def rndstr(length):
+    """
+    This generates a random string of given `length` - with only digits and letters.
+    """
     return ''.join([random.choice(string.letters+string.digits) for i in range(0,length)])
 
 def stringToLong(s):
+    """
+    Not used.
+    """
     return long('\0'+s, 256)
 
 def longToString(n):
+    """
+    Not used.
+    """
     s = n.tostring()
     if s[0] == '\0' and s != '\0':
         s = s[1:]
     return s
 
 def receiptIDstr(receipt_id):
+    """
+    This method is used to make good string for receipt ID.  
+    """
     try:
         return '%08d' % int(receipt_id)
     except:
         return str(receipt_id)
 
 def username2idurl(username, host='identity.datahaven.net'):
+    """
+    Creates an IDURL from given username, default identity server is used.
+    """
     return 'http://' + host + '/' + username + '.xml'
 
 def calculate_best_dimension(sz, maxsize=8):
+    """
+    This method is used to visually organize users on screen.
+    Say 4 items is pretty good looking in one line.
+    But 13 items seems fine in three lines.
+        :param sz: number of items to be organized
+        :param maxsize: the maximum width of the matrix. 
+    """
     cached = {2: (2,1), 
-              4:(4,1),
-              7:(4,2),
+              4: (4,1),
+              7: (4,2),
               13:(5,3),
               18:(6,3),
               26:(7,4),
@@ -650,6 +810,10 @@ def calculate_best_dimension(sz, maxsize=8):
     return w, h
 
 def calculate_padding(w, h):
+    """
+    Calculates space between icons to show in the GUI. 
+    Need to put less spaces when show a lot of items. 
+    """
     imgW = 64
     imgH = 64
     if w >= 4:
@@ -659,6 +823,9 @@ def calculate_padding(w, h):
     return imgW, imgH, padding
 
 def getDeltaTime(tm):
+    """
+    Return a string shows how much time passed since `tm` moment.
+    """
     try:
 #        tm = time.mktime(time.strptime(self.backupID, "F%Y%m%d%I%M%S%p"))
         dt = round(time.time() - tm)
@@ -671,6 +838,9 @@ def getDeltaTime(tm):
         return None, None
 
 def getRealHost(host, port=None):
+    """
+    Some tricks to get a 'host' from contact method (see `lib.identity`).
+    """
     if isinstance(host, str):
         if host.startswith('http://'):
             host = host[7:]
@@ -697,8 +867,10 @@ def getRealHost(host, port=None):
     return host
 
 
-#split strings "%dx%d+%d+%d" into 4 integers
 def split_geom_string(geomstr):
+    """
+    Split strings created with format "%dx%d+%d+%d" into 4 integers.
+    """
     try:
         r = re.split('\D+', geomstr, 4)
         return int(r[0]), int(r[1]), int(r[2]), int(r[3])
@@ -707,19 +879,18 @@ def split_geom_string(geomstr):
 
 
 def percent2string(percent, precis=3):
+    """
+    A tool to make a string (with % at the end) from given float, `precis` is precision to round the number. 
+    """
     s = str(round(percent, precis))
     if s[-2:] == '.0':
         s = s[:-2]
     return s + '%'
 
-#def FloatToString(input):
-#    formatted = '%.10f' % (input)
-#    stripped = re.split('0+$', formatted)
-#    if stripped[0][-1] in ['.', ',']: # some localizations use ',' instead of '.'
-#        return stripped[0] + '0'
-#    else:
-#        return stripped[0]
 def float2str(float_value, mask='%6.8f', no_trailing_zeros=True):
+    """
+    Some smart method to do simple operation - convert float value into string.
+    """
     try:
         f = float(float_value)
     except:
@@ -730,6 +901,11 @@ def float2str(float_value, mask='%6.8f', no_trailing_zeros=True):
     return s
 
 def seconds_to_time_left_string(seconds):
+    """
+    Using this method you can print briefly some period of time.
+    This is my post on StackOverflow to share that:
+        http://stackoverflow.com/questions/538666/python-format-timedelta-to-string/19074707#19074707
+    """
     s = int(seconds)
     years = s // 31104000
     if years > 1:
@@ -785,6 +961,9 @@ def seconds_to_time_left_string(seconds):
 #------------------------------------------------------------------------------ 
 
 def unicode_to_str_safe(unicode_string, encodings=None):
+    """
+    I tried to make an 'ultimate' method to convert unicode to string here. 
+    """
     try:
         return str(unicode_string) # .decode('utf-8')
     except:
@@ -815,6 +994,9 @@ def unicode_to_str_safe(unicode_string, encodings=None):
 #------------------------------------------------------------------------------
 
 def getClipboardText():
+    """
+    A portable way to get a clipboard data - some sort of Ctrl-V.  
+    """
     if dhnio.Windows():
         try:
             import win32clipboard
@@ -848,6 +1030,9 @@ def getClipboardText():
         return ''
 
 def setClipboardText(txt):
+    """
+    A portable way to set a clipboard data - just like when you select something and press Ctrl-C.  
+    """
     if dhnio.Windows():
         try:
             import win32clipboard
@@ -876,6 +1061,10 @@ def setClipboardText(txt):
 #------------------------------------------------------------------------------ 
 
 def isValidTransport(transport):
+    """
+    Check string to be a valid transport.
+    See `lib.transport_control' for more details.
+    """
     global validTransports
     if transport in validTransports:
         return True
@@ -883,6 +1072,9 @@ def isValidTransport(transport):
         return False
 
 def validateTransports(orderL):
+    """
+    Validate a list of strings - all must be a valid transports.
+    """
     global validTransports
     transports = []
     for transport in orderL:
@@ -898,6 +1090,10 @@ def validateTransports(orderL):
     return transports
 
 def setTransportOrder(orderL):
+    """
+    Validate transports and save the list in the [DataHaven.NET data dir]\metadata\torder.
+    It is useful to remember the priority of used transports. 
+    """
     orderl = orderL
     orderL = validateTransports(orderL)
     orderTxt = string.join(orderl, ' ')
@@ -905,6 +1101,9 @@ def setTransportOrder(orderL):
     dhnio.WriteFile(settings.DefaultTransportOrderFilename(), orderTxt)
 
 def getTransportOrder():
+    """
+    Read and validate tranports from [DataHaven.NET data dir]\metadata\torder file.
+    """
     global validTransports
     dhnio.Dprint(8, 'misc.getTransportOrder')
     order = dhnio.ReadTextFile(settings.DefaultTransportOrderFilename()).strip()
@@ -917,28 +1116,44 @@ def getTransportOrder():
     return orderL
 
 def getOrderFromContacts(ident):
+    """
+    A wrapper for `identity.getProtoOrder` method.
+    """
     return ident.getProtoOrder()
 
 #-------------------------------------------------------------------------------
 
 def StartWebStream():
+    """
+    This calls `lib.weblog.init` to start a web server to show the program logs.
+    The port number is set in the settings.    
+    """
     dhnio.Dprint(6,"misc.StartWebStream")
     import weblog
     weblog.init(settings.getWebStreamPort())
     dhnio.SetWebStream(weblog.log)
 
 def StopWebStream():
+    """
+    Call `lib.weblog.shutdown` to stop a web server. 
+    """
     dhnio.Dprint(6,"misc.StopWebStream")
     dhnio.SetWebStream(None)
     import weblog
     weblog.shutdown()
 
 def StartWebTraffic(root=None, path='traffic'):
+    """
+    Calls `lib.webtraffic.init` to run a web server to monitor packets traffic.
+    """
     dhnio.Dprint(6,"misc.StartWebStream")
     import lib.webtraffic as webtraffic
     webtraffic.init(root, path, settings.getWebTrafficPort())
 
 def StopWebTraffic():
+    """
+    Stops web server for traffic montitoring.
+    """
     dhnio.Dprint(6,"misc.StopWebTraffic")
     import lib.webtraffic as webtraffic
     webtraffic.shutdown()
@@ -946,20 +1161,34 @@ def StopWebTraffic():
 #------------------------------------------------------------------------------
 
 def hmac_hash(string):
+    """
+    Not used.
+    """
     h = hmac.HMAC(settings.HMAC_key_word(), string)
     return h.hexdigest().upper()
 
 def encode64(s):
+    """
+    A wrapper for built-in `base64.b64encode`.
+    """
     return base64.b64encode(s)
 
 def decode64(s):
+    """
+    A wrapper for built-in `base64.b64decode`.
+    """
     return base64.b64decode(s)
 
 def get_hash(src):
-##    h = md5.new(src).hexdigest()
+    """
+    Get a good looking MD5 hash of `src` string.
+    """
     return hashlib.md5(src).hexdigest()
 
 def file_hash(path):
+    """
+    Read file and get get its hash.
+    """
     src = dhnio.ReadBinaryFile(path)
     if not src:
         return None
@@ -968,12 +1197,18 @@ def file_hash(path):
 #-------------------------------------------------------------------------------
 
 def time2daystring(tm=None):
+    """
+    Use built-in method `time.strftime` to conver `tm` to string in '%Y%m%d' format.
+    """
     tm_ = tm
     if tm_ is None:
         tm_ = time.time()
     return time.strftime('%Y%m%d', time.localtime(tm_))
 
 def daystring2time(daystring):
+    """
+    Reverse method for `time2daystring`.
+    """
     try:
         t = time.strptime(daystring, '%Y%m%d')
     except:
@@ -981,19 +1216,31 @@ def daystring2time(daystring):
     return time.mktime(t)
 
 def time2str(format):
+    """
+    A wrapper for `time.strftime`.
+    """
     return time.strftime(format)
 
 def gmtime2str(format, seconds=None):
+    """
+    Almost the same to `time2str`, but uses `time.gmtime` to get the current moment.
+    """
     if not seconds:
         return time.strftime(format, time.gmtime())
     return time.strftime(format, time.gmtime(seconds))
 
 def str2gmtime(time_string, format):
+    """
+    A reverse method for `gmtime2str`.
+    """
     return time.mktime(time.strptime(time_string, format))
 
 #------------------------------------------------------------------------------ 
 
 def ReadRepoLocation():
+    """
+    This method reutrn a tuple of two strings: "name of the current repo" and "repository location".
+    """
     if dhnio.Linux():
         repo_file = os.path.join(dhnio.getExecutableDir(), 'repo.txt')
         if os.path.isfile(repo_file):
@@ -1020,6 +1267,9 @@ def ReadRepoLocation():
 #-------------------------------------------------------------------------------
 
 def SetAutorunWindows():
+    """
+    Creates a shortcut in Start->Applications->Startup under Windows, so program can be started during system startup.
+    """
     if os.path.abspath(dhnio.getExecutableDir()) != os.path.abspath(settings.WindowsBinDir()):
         return
     createWindowsShortcut(
@@ -1031,6 +1281,9 @@ def SetAutorunWindows():
         'Startup', )
 
 def ClearAutorunWindows():
+    """
+    Remove a shortcut from Windows startup menu.
+    """
     removeWindowsShortcut('DataHaven.NET.lnk', folder='Startup')
 
 #def SetAutorunWindowsOld(CUorLM='CU', location=settings.getAutorunFilename(), name=settings.ApplicationName()):
@@ -1046,16 +1299,25 @@ def ClearAutorunWindows():
 #-------------------------------------------------------------------------------
 
 def transport_control_remove_after():
+    """
+    Not used.
+    """
     global _RemoveAfterSent
     return _RemoveAfterSent
 
 def set_transport_control_remove_after(flag):
+    """
+    Not used.
+    """
     global _RemoveAfterSent
     _RemoveAfterSent = flag
 
 #-------------------------------------------------------------------------------
 
 def pathToWindowsShortcut(filename, folder='Desktop'):
+    """
+    This should return a path to the "Desktop" folder, creating a files in that folder will show an icons on the desktop.
+    """
     try:
         from win32com.client import Dispatch
         shell = Dispatch('WScript.Shell')
@@ -1066,6 +1328,9 @@ def pathToWindowsShortcut(filename, folder='Desktop'):
         return ''
 
 def createWindowsShortcut(filename, target='', wDir='', icon='', args='', folder='Desktop'):
+    """
+    Creates a shortcut for DataHaven.NET on the desktop. 
+    """
     if dhnio.Windows():
         try:
             from win32com.client import Dispatch
@@ -1083,6 +1348,9 @@ def createWindowsShortcut(filename, target='', wDir='', icon='', args='', folder
             dhnio.DprintException()
 
 def removeWindowsShortcut(filename, folder='Desktop'):
+    """
+    Removes a DataHaven.NET shortcut from the desktop.
+    """
     if dhnio.Windows():
         path = pathToWindowsShortcut(filename, folder)
         if os.path.isfile(path) and os.access(path, os.W_OK):
@@ -1094,6 +1362,9 @@ def removeWindowsShortcut(filename, folder='Desktop'):
 #-------------------------------------------------------------------------------
 
 def pathToStartMenuShortcut(filename):
+    """
+    Path to the Windows start menu folder.
+    """
     try:
         from win32com.shell import shell, shellcon
         from win32com.client import Dispatch
@@ -1106,6 +1377,9 @@ def pathToStartMenuShortcut(filename):
         return ''
 
 def createStartMenuShortcut(filename, target='', wDir='', icon='', args=''):
+    """
+    Create a DataHaven.NET shortcut in the Windows start menu.
+    """
     if dhnio.Windows():
         try:
             from win32com.shell import shell, shellcon
@@ -1125,6 +1399,9 @@ def createStartMenuShortcut(filename, target='', wDir='', icon='', args=''):
             dhnio.DprintException()
 
 def removeStartMenuShortcut(filename):
+    """
+    Remove a shortcut from Windows start menu.
+    """
     if dhnio.Windows():
         path = pathToStartMenuShortcut(filename)
         if os.path.isfile(path) and os.access(path, os.W_OK):
@@ -1137,6 +1414,9 @@ def removeStartMenuShortcut(filename):
 #------------------------------------------------------------------------------ 
 
 def DoRestart(param=''):
+    """
+    A smart and portable way to restart a whole program.
+    """
     if dhnio.Windows():
         if dhnio.isFrozen():
             dhnio.Dprint(2, "misc.DoRestart under Windows (Frozen), param=%s" % param)
@@ -1193,6 +1473,9 @@ def DoRestart(param=''):
             
             
 def RunBatFile(filename, output_filename=None):
+    """
+    Can execute a bat file under Windows.
+    """
     if not dhnio.Windows():
         return
     dhnio.Dprint(0, 'misc.RunBatFile going to execute ' + str(filename))
@@ -1203,34 +1486,13 @@ def RunBatFile(filename, output_filename=None):
 
     return RunShellCommand(cmd, False)
 
-#    cmdargs = [filename, ]
-
-#    # method 1
-#    try:
-#        import win32process
-#        BatProcess = nonblocking.Popen(
-#            cmdargs,
-##            shell=True,
-#            stdin=subprocess.PIPE,
-##            stdout=stdout_file,
-##            stderr=stdout_file,
-#            creationflags = win32process.CREATE_NO_WINDOW,)
-#    except:
-#        dhnio.Dprint(1, 'misc.RunBatFile ERROR executing: ' + str(filename))
-#        dhnio.DprintException()
-#        BatProcess = None
-#    return BatProcess
-
-#    # method 2
-#    filename = os.path.abspath(filename).replace('\\', '/')
-#    cmdargs = [filename, ]
-#    if output_filename is not None:
-#        cmdargs.append('>"%s"' % output_filename)
-#    dhnio.Dprint(0, 'misc.RunBatFile cmdargs=' + str(cmdargs))
-#    return os.spawnve(os.P_DETACH, filename, cmdargs, os.environ)
-
 
 def RunShellCommand(cmdstr, wait=True):
+    """
+    This uses `subprocess.Popen` to execute a process. 
+        :param cmdstr: a full command line ( with arguments ) to execute.
+        :param wait: if True - the main process will be blocked until child is finished.
+    """
     dhnio.Dprint(8, 'misc.RunShellCommand ' + cmdstr)
     try:
         if dhnio.Windows():
@@ -1258,6 +1520,9 @@ def RunShellCommand(cmdstr, wait=True):
 
 
 def ExplorePathInOS(filepath):
+    """
+    Very nice and portable way to show location or file on local disk. 
+    """
     try:
         if dhnio.Windows():
             # os.startfile(filepath)
@@ -1281,58 +1546,12 @@ def ExplorePathInOS(filepath):
     return
 
 
-#def CopyBinariesAndUserDataOnDrive(drive):
-#    #TODO
-#    return
-#
-#    if not dhnio.Windows():
-#        binSize = dhnio.getDirectorySize(dhnio.getExecutableDir())
-#        dataSize = dhnio.getDirectorySize(settings.BaseDir())
-#
-#        cmdargs1 = ['cp', '-r', dhnio.getExecutableDir(), os.path.join(drive,'DataHaven.NET')]
-#        dhnio.Dprint(4, 'misc.CopyBinariesAndUserDataOnDrive call '+str(cmdargs1))
-#        subprocess.call(cmdargs1)
-#        cmdargs2 = ['cp', '-r', settings.BaseDir(), os.path.join(drive,'datahavennet')]
-#        dhnio.Dprint(4, 'misc.CopyBinariesAndUserDataOnDrive call '+str(cmdargs2))
-#        subprocess.call(cmdargs2)
-#        return 'ok'
-#
-#    else:
-#        import win32api
-#        binSize = dhnio.getDirectorySize(dhnio.getExecutableDir())
-#        dataSize = dhnio.getDirectorySize(settings.BaseDir())
-#        t = win32api.GetDiskFreeSpace(os.path.abspath(drive))
-#        freeSpace = t[0] * t[1] * t[2]
-#        if binSize + dataSize + 1024 * 1024 * 5 > freeSpace:
-#            return 'space %d Mb' % ((binSize + dataSize) / (1024*1024))
-#
-#        dir1 = os.path.abspath(os.path.join(drive,'DataHaven.NET'))
-#        dir2 = os.path.abspath(os.path.join(drive,'datahavennet'))
-#
-#        if os.path.exists(dir1):
-#            return 'exist '+dir1
-#
-#        if os.path.exists(dir2):
-#            return 'exist '+dir2
-#
-#        cmdstr1 = 'mkdir ' + dir1
-#        cmdstr2 = 'mkdir ' + dir2
-#        cmdstr3 = 'xcopy "%s" %s /E /K /R /H /Y' % (os.path.join(dhnio.getExecutableDir(), '*.*'), dir1)
-#        cmdstr4 = 'xcopy "%s" %s /E /K /R /H /Y' % (os.path.join(settings.BaseDir(), '*.*'), dir2)
-#
-#        if RunShellCommand(cmdstr1) is None:
-#            return 'error'
-#        if RunShellCommand(cmdstr2) is None:
-#            return 'error'
-#        if RunShellCommand(cmdstr3) is None:
-#            return 'error'
-#        if RunShellCommand(cmdstr4) is None:
-#            return 'error'
-#
-#        return 'ok'
-
-
 def MoveFolderWithFiles(current_dir, new_dir, remove_old=False):
+    """
+    The idea was to be able to move the files inside the donated area to another location.
+    Say, user want to switch our software to donate space from another HDD. 
+    At the moment this feature is off.
+    """
     if os.path.abspath(current_dir) == os.path.abspath(new_dir):
         return None
     
@@ -1376,6 +1595,11 @@ def MoveFolderWithFiles(current_dir, new_dir, remove_old=False):
 #------------------------------------------------------------------------------
 
 def UpdateDesktopShortcut():
+    """
+    Called at startup to update DataHaven.NET shortcut on the desktop.
+    I was playing with that, tried to keep the shortcut on the desktop always (even if user removes it).
+    This is switched off now, it was very anoying for one my friend who install DHN.
+    """
     dhnio.Dprint(6, 'misc.UpdateDesktopShortcut')
     if dhnio.Windows() and dhnio.isFrozen():
         if settings.getGeneralDesktopShortcut():
@@ -1400,6 +1624,9 @@ def UpdateDesktopShortcut():
 
 
 def UpdateStartMenuShortcut():
+    """
+    Update icons in the start menu, switched off right now.
+    """
     dhnio.Dprint(6, 'misc.UpdateStartMenuShortcut')
     if dhnio.Windows() and dhnio.isFrozen():
         if settings.getGeneralStartMenuShortcut():
@@ -1423,6 +1650,11 @@ def UpdateStartMenuShortcut():
     #         RunShellCommand("xdg-desktop-menu uninstall datahavenmenu.desktop")
 
 def UpdateSettings():
+    """
+    This method is called at startup, during "local initialization" part, 
+    see `p2p.dhninit.init_local()` method.
+    I used that place sometimes to 'patch' users settings.
+    """
     dhnio.Dprint(6, 'misc.UpdateSettings')
 
     # setting up a Desktop shortcuts
@@ -1446,6 +1678,9 @@ def UpdateSettings():
 #-------------------------------------------------------------------------------
 
 def SendDevReportOld(subject, body, includelogs):
+    """
+    The old stuff to send dev. reports.
+    """
     try:
         filesList = []
         if includelogs:
@@ -1487,6 +1722,14 @@ def SendDevReportOld(subject, body, includelogs):
         
 
 def SendDevReport(subject, body, includelogs, progress=None, receiverDeferred=None):
+    """
+    Send a developer report to our public cgi script at:
+        http://datahaven.net/cgi-bin/feedback.py
+    It should record it and so I can get your message and ( optional ) your logs.
+        TODO:
+            This seems to be not working correct yet.
+            The process may not finish for big data, and progress is not shown correctly.
+    """
     try:
         zipfilename = ''
         filesList = []
@@ -1526,8 +1769,20 @@ def SendDevReport(subject, body, includelogs, progress=None, receiverDeferred=No
 #------------------------------------------------------------------------------ 
 
 def GetUserProfilePicturePath():
+    """
+    Not used right now.
+    I wish to show some personal images instead of green or gray boys.
+    Users can provide own avatars, but more smart way is to take that avatar from user private space.
+    This should be used only during first install of the program. 
+    May be we can use facebook or google personal page to get the picture.
+    The idea was taken from: 
+        http://social.msdn.microsoft.com/Forums/en/vcgeneral/thread/8c72b948-d32c-4785-930e-0d6fdf032ecc
+    For linux we just check the file ~/.face.
+    Than user can upload his avatar to some place (we can store avatars for free) 
+    and set that url into his identity - so others can get his avatar very easy.
+    """
     if dhnio.Windows():
-        # http://social.msdn.microsoft.com/Forums/en/vcgeneral/thread/8c72b948-d32c-4785-930e-0d6fdf032ecc
+        
         username = os.path.basename(os.path.expanduser('~'))
         if dhnio.windows_version() == 5: # Windows XP
             # %ALLUSERSPROFILE%\Application Data\Microsoft\User Account Pictures
@@ -1544,11 +1799,14 @@ def GetUserProfilePicturePath():
     return ''
 
 def UpdateRegistryUninstall(uninstall=False):
+    """
+    This is not used right now.
+    Now DHN is installed via .msi file and we do all that stuff inside it.
+    """
     try:
         import _winreg
     except:
         return False
-    
     unistallpath = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall" 
     regpath = unistallpath + "\\DataHaven.NET"
     values = {
@@ -1560,7 +1818,6 @@ def UpdateRegistryUninstall(uninstall=False):
         'NoRepair':         1,
         'UninstallString':  '%s uninstall' % dhnio.getExecutableFilename(),
         'URLInfoAbout':     'http://datahaven.net', }    
-
     # open
     try:
         reg = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE, regpath, 0, _winreg.KEY_ALL_ACCESS)
@@ -1570,7 +1827,6 @@ def UpdateRegistryUninstall(uninstall=False):
         except:
             dhnio.DprintException()
             return False
-
     # check
     i = 0
     while True:
@@ -1591,7 +1847,6 @@ def UpdateRegistryUninstall(uninstall=False):
             if name == 'DisplayName' and value == 'DataHaven.NET':
                 _winreg.CloseKey(reg)
                 return True
-
     # delete
     if uninstall:
         _winreg.CloseKey(reg)
@@ -1608,7 +1863,6 @@ def UpdateRegistryUninstall(uninstall=False):
             return False
         _winreg.CloseKey(reg)
         return True
-
     # write
     for key, value in values.items():
         typ = _winreg.REG_SZ
@@ -1616,11 +1870,13 @@ def UpdateRegistryUninstall(uninstall=False):
             typ = _winreg.REG_DWORD
         _winreg.SetValueEx(reg, key, 0, typ, value)
     _winreg.CloseKey(reg)
-
     return True
 
 
 def MakeBatFileToUninstall(wait_appname='dhnmain.exe', local_dir=dhnio.getExecutableDir(), dirs2delete=[settings.BaseDir(),]):
+    """
+    Not used.
+    """
     dhnio.Dprint(0, 'misc.MakeBatFileToUninstall')
     import tempfile
     batfileno, batfilename = tempfile.mkstemp('.bat', 'DataHaven.NET-uninstall-')
@@ -1644,6 +1900,20 @@ def MakeBatFileToUninstall(wait_appname='dhnmain.exe', local_dir=dhnio.getExecut
 #------------------------------------------------------------------------------
 
 def LoopAttenuation(current_delay, faster, min, max):
+    """
+    Pretty common method.
+    Twisted reactor is very nice, you can call `reactor.callLater(3, method_a, 'param1')` 
+    and method_a('param1') will be called exactly when 3 seconds passed.
+    But we do not want fixed periods sometimes. 
+    You must be hury when you have a lot of work, in the next moment - need rest.
+    For example - need to read some queue as fast as possible when you have some items inside.
+    This method is used to calculate the delay to the next call of some 'idle' method.
+        :param current_delay: current period of time in seconds between calls 
+        :param faster:  if this is True - method should return `min` period - call next time as soon as possible
+                        if this is False - method will multiply `current_delay` by `_AttenuationFactor` and so decrease the speed 
+        :param min: the minimum delay between calls
+        :param max: the maximum delay between calls
+    """
     global _AttenuationFactor
     if faster:
         return min

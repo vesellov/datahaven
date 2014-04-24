@@ -1,5 +1,17 @@
 #!/usr/bin/python
 #transport_skype.py
+#
+#    Copyright DataHaven.NET LTD. of Anguilla, 2006
+#    Use of this software constitutes acceptance of the Terms of Use
+#      http://datahaven.net/terms_of_use.html
+#    All rights reserved.
+#
+
+"""
+I was playing with SkypeAPI to be able to use Skype to transfer files.
+User should run both Skype and DHN together and here is the code to link them.  
+This is not used anymore, but it was a nice experience :-). 
+"""
 
 _Skype4PyInstalled = False
 try:

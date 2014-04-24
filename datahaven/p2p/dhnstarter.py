@@ -10,6 +10,7 @@
 import os
 import sys
 import hashlib
+import platform
 import time
 import subprocess
 import tempfile
@@ -23,12 +24,17 @@ import EasyDialogs
 #------------------------------------------------------------------------------
 
 def sharedPath(filename, subdir='logs'):
-    sharedDir = os.path.join(
-                        #os.path.expanduser('~'),
-                        #'Application Data',
-                        os.environ['APPDATA'],
-                        'DataHaven.NET',
-                        subdir)
+    try:
+        appdata = os.environ['APPDATA']
+    except:
+        if platform.uname()[0] == 'Windows': 
+            appdata = os.path.join(os.path.expanduser('~'), 'Application Data')
+        else:
+            appdata = os.path.expanduser('~')
+    if platform.uname()[0] == 'Windows':
+        sharedDir = os.path.join(appdata, 'DataHaven.NET', subdir)
+    else:
+        sharedDir = os.path.join(appdata, '.datahaven', subdir)
     if filename is None:
         return os.path.abspath(sharedDir)
     return os.path.abspath(os.path.join(sharedDir, filename))
@@ -248,7 +254,7 @@ def uninstall():
             'dhntester.exe',
             'dhnbackup.exe'])
     if ret != 0:
-        return ret
+        return ret  
     logwrite('start uninstalling\n')
     remove_registry_uninstall()
     batfilename = make_bat_file()

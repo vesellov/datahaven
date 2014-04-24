@@ -176,7 +176,6 @@ def SendContacts():
 
 def SendSuppliers():
     dhnio.Dprint(6, "identitypropagate.SendSuppliers")
-#    guistatus.InitCallSuppliers()
     RealSendSuppliers()
 
 
@@ -230,7 +229,6 @@ def SlowSendCustomers(delay=1):
 
 def SendCustomers():
     dhnio.Dprint(8, "identitypropagate.SendCustomers")
-#    guistatus.InitCallCustomers()
     RealSendCustomers()
 
 
@@ -241,30 +239,24 @@ def RealSendCustomers():
 
 def HandleSingleSupplier(ackpacket):
     Num = contacts.numberForSupplier(ackpacket.OwnerID)
-#    guistatus.SetShortStatusAlive(ackpacket, Num, "suppliers")
 
 
 def HandleSingleCustomer(ackpacket):
     Num = contacts.numberForCustomer(ackpacket.OwnerID)
-#    guistatus.SetShortStatusAlive(ackpacket, Num, "customers")
 
 
 def HandleAck(ackpacket):
-    #Num = contacts.numberForContact(ackpacket.OwnerID)
     dhnio.Dprint(6, "identitypropagate.HandleAck " + nameurl.GetName(ackpacket.OwnerID))
-#    guistatus.SetShortStatusAlive(ackpacket, Num, "contacts")
 
 
 def HandleSuppliersAck(ackpacket):
     Num = contacts.numberForSupplier(ackpacket.OwnerID)
     dhnio.Dprint(8, "identitypropagate.HandleSupplierAck ")
-#    guistatus.SetShortStatusAlive(ackpacket, Num, "suppliers")
 
 
 def HandleCustomersAck(ackpacket):
     Num = contacts.numberForCustomer(ackpacket.OwnerID)
     dhnio.Dprint(8, "identitypropagate.HandleCustomerAck ")
-#    guistatus.SetShortStatusAlive(ackpacket, Num, "customers")
 
 
 def SendToID(idurl, AckHandler=None, Payload=None, NeedAck=False, wide=False):

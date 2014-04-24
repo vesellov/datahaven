@@ -1,45 +1,42 @@
 #!/usr/bin/python
-#
+#dhnblock.py
 #
 #    Copyright DataHaven.NET LTD. of Anguilla, 2006
 #    Use of this software constitutes acceptance of the Terms of Use
 #      http://datahaven.net/terms_of_use.html
 #    All rights reserved.
 #
-# DHNBLOCK.PY
-#
-# Higher level code interfaces with dhnblock.py so that it does not have to deal
-# with ECC stuff.  We write or read a large block at a time (maybe 64 MB say).
-# When writing we generate all the ECC information, and when reading we will
-# use ECC to recover lost information so user sees whole block still.
-#
-# We have to go to disk.  The normal mode is probably that there are a few machines that
-# are slow and the rest move along.  We want to get the backup secure as soon as possible.
-# It can be secure even if 5 to 10 suppliers are not finished yet.  But this could be
-# a lot of storage, so we should be using disk.
-#
-# We want to generate a pool of writes to do, and put in more as it gets below some
-# MB limit.  But we should not be limited by a particular nodes speed.
-#
-# The DHNpacket will have all the info about where it is going etc.
-# We number them with our block number and the supplier numbers.
-#
-# Going to disk should let us do restarts after crashes without much trouble.
-#
-# Digital Signatures and timestamps are done on dhnblocks.  Signatures are also
-# done on dhnpackets.
-#
-# RAIDMAKE:
-#     This object can be asked to generate any/all dhnpacket(s) that would come from this
-#     dhnblock.
-# RAIDREAD:
-#     It can also rebuild the dhnblock from packets and will
-#     generate the read requests to get fetch the packets.
-#
-# import base64
-# data64=base64.encodestring(data)    #  in case something can not handle binary remember this
-# data=base64.decodestring(data64)    #  in case something can not handle binary remember this
-#
+
+"""
+Higher level code interfaces with dhnblock.py so that it does not have to deal
+with ECC stuff.  We write or read a large block at a time (maybe 64 MB say).
+When writing we generate all the ECC information, and when reading we will
+use ECC to recover lost information so user sees whole block still.
+
+We have to go to disk.  The normal mode is probably that there are a few machines that
+are slow and the rest move along.  We want to get the backup secure as soon as possible.
+It can be secure even if 5 to 10 suppliers are not finished yet.  But this could be
+a lot of storage, so we should be using disk.
+
+We want to generate a pool of writes to do, and put in more as it gets below some
+MB limit.  But we should not be limited by a particular nodes speed.
+
+The DHNpacket will have all the info about where it is going etc.
+We number them with our block number and the supplier numbers.
+
+Going to disk should let us do restarts after crashes without much trouble.
+
+Digital Signatures and timestamps are done on dhnblocks.  Signatures are also
+done on dhnpackets.
+
+RAIDMAKE:
+    This object can be asked to generate any/all dhnpacket(s) that would come from this
+    dhnblock.
+RAIDREAD:
+    It can also rebuild the dhnblock from packets and will
+    generate the read requests to get fetch the packets.
+
+"""
 
 import os
 import sys

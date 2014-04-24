@@ -9,6 +9,11 @@
 #
 #
 
+"""
+The idea was to use email servers to transfer packets.
+Definitely very obsolete things here.
+This is not used right now - it's all my sentimentality, I do not want to delete this file :-).   
+"""
 
 import os
 import sys

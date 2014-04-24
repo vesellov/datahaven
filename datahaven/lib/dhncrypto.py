@@ -5,31 +5,24 @@
 #    Use of this software constitutes acceptance of the Terms of Use
 #      http://datahaven.net/terms_of_use.html
 #    All rights reserved.
-#
-#  For most of DHN code (outside ssh I think) we will only use ascii encoded string versions of keys.
-#  Expect to make keys, signatures, and hashes all base64 strings soon.
-#
-#  Our local key is always onhand.
-#
-#  Todo:
-#     Main thing is to be able to use public keys in contacts to verify dhnpackets
-#     We never want to bother storing bad data, and need localtester to do localscrub
-#
-# Crypto info:
-# http://www.amk.ca/python/writing/pycrypt/pycrypt.html
 
-# run several times from interpreter and it does not like loading RSA key from previous run PREPRO
-
+"""
+Here is a bunch of crypto methods used in all parts of the software.
+DataHaven.NET uses PyCrypto library:
+    https://www.dlitz.net/software/pycrypto/
+For most of DHN code (outside ssh I think) we will only use ascii encoded string versions of keys.
+Expect to make keys, signatures, and hashes all base64 strings soon.
+Our local key is always on hand.
+Main thing is to be able to use public keys in contacts to verify dhnpackets.
+We never want to bother storing bad data, and need localtester to do local scrub.
+"""
 
 import os
 import random
-#import base64
 import hashlib
-#import time
 
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import DES3
-#from Crypto.Cipher import AES
 
 import warnings
 warnings.filterwarnings('ignore',category=DeprecationWarning)
@@ -49,6 +42,20 @@ LocalKey = None
 #------------------------------------------------------------------------------ 
 
 def InitMyKey(keyfilename=None):
+    """
+    This is core method. 
+    At first it check the Private Key in the memory, if it is already initialized it does nothing. 
+    The local key are placed in the "[DataHaven.NET data dir]/metadata/mykeyfile".
+    If file "[DataHaven.NET data dir]/metadata/mykeyfile_location" exists - 
+    it should contain the location of the mykeyfile. Useful to store Private Key on the USB flash.
+    DataHaven.NET data dir is platform dependent:
+        - Linux: ~/.datahaven
+        - Windows XP: C:/Documents and Settings/[user]/Application Data/DataHaven.NET
+        - Windows Vista, 7, 8: C:/Users/[user]/AppData/Roaming/DataHaven.NET
+    Finally if target file exist - the Private Key will be loaded into memory.
+    If file does not exist - the new key will be generated. 
+    The size for new key will be taken from settings.  
+    """
     global MyRsaKey
     global LocalKey
     if LocalKey is not None:
@@ -67,45 +74,64 @@ def InitMyKey(keyfilename=None):
         MyRsaKey = LocalKey.keyObject
     else:
         dhnio.Dprint(4, 'dhncrypto.InitMyKey generate new private key')
-        # want 2048 but might have had problem - had shorter when using banana for serialization
         MyRsaKey = RSA.generate(settings.getPrivateKeySize(), os.urandom)       
         LocalKey = keys.Key(MyRsaKey)
         keystring = LocalKey.toString('openssh')
         dhnio.WriteFile(keyfilename, keystring)
 
 def ForgetMyKey():
+    """
+    Remove Private Key from memory.
+    """
     global LocalKey
     global MyRsaKey
     LocalKey = None
     MyRsaKey = None
 
 def isMyLocalKeyReady():
+    """
+    Check if the Key is already loaded into memory.
+    """
     global LocalKey
     return LocalKey is not None
 
 def MyPublicKey():
+    """
+    Return Public part of the Key as openssh string.
+    """
     global LocalKey
     InitMyKey()
     Result = LocalKey.public().toString('openssh')
     return Result
 
 def MyPrivateKey():
+    """
+    Return Private part of the Key as openssh string.
+    """
     global LocalKey
     InitMyKey()
     return LocalKey.toString('openssh')
 
 def MyPublicKeyObject():
+    """
+    Return Public part of the Key as object, useful to convert to different formats.
+    """
     global LocalKey
     InitMyKey()
     return LocalKey.public()
 
 def MyPrivateKeyObject():
+    """
+    Return Private part of the Key as object.
+    """
     global LocalKey
     InitMyKey()
     return LocalKey
 
 def Sign(inp):
-    #dhnio.Dprint(18, 'dhncrypto.Sign %d bytes' % len(inp))
+    """
+    Sign some `inp` string with our Private Key, this calls PyCrypto method `Crypto.PublicKey.RSA.sign`.
+    """
     global LocalKey
     InitMyKey()
     # Makes a list but we just want a string
@@ -114,69 +140,114 @@ def Sign(inp):
     result = str(Signature[0]) 
     return result
 
-# key is public key in string format - as is dhncrypto standard, mostly
 def VerifySignature(keystring, hashcode, signature):
+    """
+    Verify signature, this calls function `Crypto.PublicKey.RSA.verify` to verify.
+    
+    :param keystring: PublicKey in openssh format.
+    :param hashcode: input data to verify, we use method `Hash` to prepare that. 
+    :param signature: string with signature to verify.
+    
+    Return True if signature is correct, otherwise False. 
+    """
+    # key is public key in string format - as is dhncrypto standard, mostly
     keyobj = keys.Key.fromString(keystring).keyObject
     # needs to be a long in a list
-    sig2 = long(signature),
-    Result = bool(keyobj.verify(hashcode, sig2))
+    sig_long = long(signature),
+    Result = bool(keyobj.verify(hashcode, sig_long))
     return Result
 
 def Verify(ConIdentity, hashcode, signature):
+    """
+    This takes Public Key from user identity and calls `VerifySignature`.
+     
+    :param ConIdentity: user's identity object'.
+    """
     key = ConIdentity.publickey
     Result = VerifySignature(key, hashcode, signature)
     return Result
 
 def HashSHA(inp):
+    """
+    Use SHA1 method to calculate the hash of `inp` string. 
+    """
     return hashlib.sha1(inp).digest()
-##    return(sha.new(input).digest())
 
 def HashMD5(inp):
+    """
+    Use MD5 method to calculate the hash of `inp` string. 
+    """
     return hashlib.md5(inp).digest()
-##    return(md5.new(input).digest())
 
 def Hash(inp):
+    """
+    Core function to calculate hash of `inp` string, right now it uses MD5 method.
+    """
     return HashMD5(inp)
 
-#  Outside of this file we just use the string version of the public keys
 def EncryptStringPK(publickeystring, inp):
+    """
+    Encrypt `inp` string with given Public Key.
+    This will construct a temporary Public Key object in the memory from `publickeystring`. 
+    Outside of this file we just use the string version of the public keys.
+    """
     keyobj = keys.Key.fromString(publickeystring)
     return EncryptBinaryPK(keyobj, inp)
 
-# This is just using local key
 def EncryptLocalPK(inp):
+    """
+    This is just using local key, encrypt `inp` string.
+    """
     global LocalKey
     InitMyKey()
     return EncryptBinaryPK(LocalKey, inp)
 
-# There is a bug in rsa.encrypt if there is a leading '\0' in the string.
-# Only think we encrypt is produced by NewSessionKey() which takes care not to have leading zero.
-# See   bug report in http://permalink.gmane.org/gmane.comp.python.cryptography.cvs/217
-# So we add a 1 in front.
 def EncryptBinaryPK(publickey, inp):
+    """
+    Encrypt `inp` string using given Public Key in the `publickey` object.
+    Return encrypted string.
+    """
+    # There is a bug in rsa.encrypt if there is a leading '\0' in the string.
+    # Only think we encrypt is produced by NewSessionKey() which takes care not to have leading zero.
+    # See   bug report in http://permalink.gmane.org/gmane.comp.python.cryptography.cvs/217
+    # So we add a 1 in front.
     atuple = publickey.keyObject.encrypt("1"+inp,"")
-    #why "1"+input ???????? TODO
-    #we just use strings here 
     return atuple[0]                     
 
-# we only decrypt with our local private key so no argument for that
 def DecryptLocalPK(inp):
+    """
+    Decrypt `inp` string with Private Key.
+    We only decrypt with our local private key so no argument for that.
+    """
     global MyRsaKey
     global LocalKey
     InitMyKey()
     atuple = (inp,)
     padresult = MyRsaKey.decrypt(atuple)
-    result = padresult[1:]                   # remove the "1" added in EncryptBinaryPK
+    # remove the "1" added in EncryptBinaryPK
+    result = padresult[1:]                   
     return result
 
 def SessionKeyType():
+    """
+    Which crypto is used for session key.
+    """
     return "DES3"
 
 def NewSessionKey():
-    return chr(random.randint(1, 255)) + os.urandom(23)   # to work around bug in rsa.encrypt
-##    return(os.urandom(24))          # really random string for making equivalent DES3 objects when needed
+    """
+    Return really random string for making equivalent DES3 objects when needed.
+    """
+    # to work around bug in rsa.encrypt - do not want leading 0.          
+    return chr(random.randint(1, 255)) + os.urandom(23)   
 
 def EncryptWithSessionKey(rand24, inp):
+    """
+    Encrypt input string with Session Key.
+    
+    :param rand24: randomly generated session key 
+    :param inp: input string to encrypt 
+    """
     SessionKey = DES3.new(rand24)
     data = misc.RoundupString(inp, 24)
     ret = SessionKey.encrypt(data)
@@ -184,12 +255,18 @@ def EncryptWithSessionKey(rand24, inp):
     return ret
 
 def DecryptWithSessionKey(rand24, inp):
+    """
+    Decrypt string with given session key.
+    """
     SessionKey = DES3.new(rand24)
     return SessionKey.decrypt(inp)
 
 #------------------------------------------------------------------------------ 
 
 def SpeedTest():
+    """
+    Some tests to check the performance.
+    """
     import time
     import string
     import random

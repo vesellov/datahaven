@@ -1,9 +1,18 @@
+#!/usr/bin/python
+#nonblocking.py
 #
 #    Copyright DataHaven.NET LTD. of Anguilla, 2006
 #    Use of this software constitutes acceptance of the Terms of Use
 #      http://datahaven.net/terms_of_use.html
 #    All rights reserved.
 #
+
+"""
+This is a wrapper around built-in module `subprocess.Popen`.
+Provide some extended functionality.
+Can read/write from pipe without blocking the main thread.
+"""
+
 import os
 import sys
 import errno
@@ -29,6 +38,11 @@ else:
     import signal
 
 class Popen(subprocess.Popen):
+    """
+    This is inherited from `subprocess.Popen` class.
+    Added some wrappers and platform specific code.
+    Most important method added is `make_nonblocking`.  
+    """
     err_report = ''
     def __init__(self, args, bufsize=0, executable=None,
                 stdin=None, stdout=None, stderr=None,
@@ -80,6 +94,9 @@ class Popen(subprocess.Popen):
         return self._state('stdout')
 
     def make_nonblocking(self):
+        """
+        Under Linux use built-in method `fcntl.fcntl` to make the pipe read/write non blocking.
+        """
         if subprocess.mswindows:
             return
         conn, maxsize = self.get_conn_maxsize('stdout', None)

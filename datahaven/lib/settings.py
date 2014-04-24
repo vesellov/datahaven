@@ -7,6 +7,13 @@
 #    All rights reserved.
 #
 
+"""
+I think this is a most used module in the project.
+Various parts of the code use this module to get the user settings and global constants.
+TODO:
+    need to move out userconfig stuff from that file
+"""
+
 import os
 
 
@@ -30,18 +37,56 @@ _BackupBlockSize = None
 _BackupMaxBlockSize = None
 _InitDone = False    
 
+#------------------------------------------------------------------------------ 
 #---INIT----------------------------------------------------------------------------
 
 def init(base_dir=None):
+    """
+    Must be called before all other things here.
+    """
     global _InitDone
     if _InitDone:
         return
     _InitDone = True
     _init(base_dir)
 
+def _init(base_dir=None):
+    """
+    This is called only once, prepare a bunch of things:
+        - Set the base folder where for program data
+        - Check and create if not exist "metadata" directory 
+        - Load settings from [DataHaven.NET data dir]/metadata/userconfig or create a new, default settings
+        - Check other "static" folders
+        - Validate most important user settings
+        - Check custom folders 
+    """
+    dhnio.Dprint(4, 'settings._init')
+    _initBaseDir(base_dir)
+    dhnio.Dprint(2, 'settings._init data location: ' + BaseDir())
+    _checkMetaDataDirectory()
+    uconfig()
+    _checkStaticDirectories()
+    _checkSettings()
+    _checkCustomDirectories()
+
+#------------------------------------------------------------------------------ 
 #---USER CONFIG---------------------------------------------------------------------------
 
 def uconfig(key=None):
+    """
+    An access function to user configuration.
+    Load settings from local file or create a default set.
+    
+    If `key` is None - return the whole object, see `lib.userconfig.UserConfig` class.
+        >>> import settings
+        >>> settings.init()
+        >>> settings.uconfig()
+        <userconfig.UserConfig instance at 0x00BB6C10>
+            
+    Or you can pass a setting name to request it. 
+        >>> settings.uconfig("logs.debug-level")
+        '14'
+    """
     global _UserConfig
     global _OverrideDict
     #init()
@@ -64,208 +109,370 @@ def uconfig(key=None):
             return ''
         return res
 
-# this (key, value) pairs will be used instead values from  _UserConfig
 def override(key, value):
+    """
+    This method can be used to redefine values in UserConfig without writing changes on disk.
+    Useful when user pass some params via command line - they should override the local settings.
+    """
     global _OverrideDict
     dhnio.Dprint(4, 'settings.override %s=%s' % (key, value))
     _OverrideDict[key] = value
 
 def override_dict(d):
+    """
+    You can pass a dictionary of settings to override existing user config.
+    """
     for key, value in d.items():
         override(key, value)
+        
+#------------------------------------------------------------------------------ 
+#--- CONSTANTS ---------------------------------------------------------------------------
 
-#---NUMBERS---------------------------------------------------------------------------
+"""
+Below is a set of global constants.
+"""
 
 def DefaultPrivateKeySize():
-    # return 1024
+    """
+    User can choose size of his Private Key during install.
+    Can be 1024, 2048 or 4096.
+    """
     return 4096
 
-# Dropbox have a 10$/month for 100-500 GB
-# so let's have 10$ for 1Tb. this is 0.01 
 def BasePricePerGBmonth():
+    """
+    Dropbox have a 10$/month for 100-500 GB.
+    So let's have 10$ for 1Tb. this is 0.01$.
+    Definitely - this is not very important thing at the moment. :-)
+    """
     return 0.01
 
 def BasePricePerGBDay():
+    """
+    Almost the same.
+    """
     return BasePricePerGBmonth() / 30.0
 
 def defaultDebugLevel():
+    """
+    Default debug level, lower values produce less messages.
+    """
     return 6
 
 def IntSize():
+    """
+    This constant is used in the RAID code.
+    The idea is to be able to optionally switch to 64 bit one day.  
+    """
     return 4
 
 def MinimumSendingDelay():
+    """
+    The lower limit of delay for repeated calls for sending processes.
+    DO NOT SET TO 0 - the main process will be blocked.
+    See `lib.misc.LoopAttenuation` method.
+    """
     return 0.01
 
 def MaximumSendingDelay():
+    """
+    The higher limit of delay for repeated calls for sending processes.
+    Higher values should decrease the network speed, but save CPU resources.  
+    """
     return 2.0 
 
 def MinimumReceivingDelay():
+    """
+    Lower limit for receiving processes.
+    """
     return 0.05
 
 def MaximumReceivingDelay():
+    """
+    Higher limit for receiving processes.
+    """
     return 4.0
 
-# Should be a function of disk space available  PREPRO
 def MaxPacketsOutstanding():
+    """
+    PREPRO
+    Should be a function of disk space available 
+    """
     return 100
 
-# if sending below this speed - we count this supplier as failed
-# if we sending too slow to all nodes - it's our problems
 def SendingSpeedLimit():
-    return 5 * 1024 # 1KB/sec is about 3.5MB/hour
+    """
+    This is lower limit during file sending in Kilobytes per second.
+    Used to calculate a packet timeout - bigger packets should have longer timeouts.
+    If sending below this speed - we count this supplier as failed.
+    If we sending too slow to all nodes - it's our problems, not suppliers.
+    """
+    return 5 * 1024 
 
-# in kilo bytes per second
 def DefaultBandwidthInLimit():
+    """
+    Incoming bandwidth limit in Kilobytes per second, 0 - unlimited.
+    """
     return 0
 
-# in kilo bytes per second, 0 - unlimited
 def DefaultBandwidthOutLimit():
+    """
+    Outgoing bandwidth limit in Kilobytes per second, 0 - unlimited.
+    """
     return 0
 
 def SendTimeOut():
-    # return 600                   # 600 seconds send timeout for ssh/tcp/q2q
-    return 60                     # 60 seconds send timeout for ssh/tcp/udp/q2q/cspace
-    #return 30
+    """
+    A default timeout when sending packets.
+    """
+    return 60 
 
-def MaxRetries():                 # "exponential backoff" - double each time so 1024*SendTimeOut seconds or 7 days
-#    return(10)
-    return 1                      # Veselin put only 3 retries (3*SendTimeOut) in thought we do not need too old packets
+def MaxRetries():                 
+    """
+    The idea was to create some "exponential backoff" - 
+    double each time. Set to 1 at the moment - so failed packets is ignored. 
+    """
+    return 1  
 
 def DefaultSendTimeOutEmail():
-    return 300                    # timeout for email sending
+    """
+    Timeout for email sending, not used.
+    """
+    return 300                
 
 def DefaultSendTimeOutHTTP():
-    return 60                     # timeout for http sending
+    """
+    Timeout for http sending, not used.
+    """
+    return 60                
 
 def DefaultAlivePacketTimeOut():
-    return 60 * 60                  #lets send alive packets every hour
+    """
+    Lets send alive packets to our contacts every hour.
+    """
+    return 60 * 60                  
 
 def DefaultBandwidthReportTimeOut():
-    return 60 * 60 * 24                #send BandwidthReport every 24 hours
+    """
+    Send `BandwidthReport` packets every 24 hours.
+    """
+    return 60 * 60 * 24                
 
 def DefaultNeedSuppliersPacketTimeOut():
-    return 60                     #if we need suppliers we will send it every 60 sec.
-
-def DefaultSuppliersNumber():
-    return 4
+    """
+    If we need suppliers we will request it every 60 sec. from Central server. 
+    """
+    return 60                     
 
 def DefaultDesiredSuppliers():
+    """
+    A starting number of suppliers for new users.
+    Definitely we want to have 64 by default, but we need to have much more alive users to do that. 
+    """
     return 4
 
 def DefaultLocaltesterLoop():
-    return 20                   #every 20 sec
+    """
+    The code in `p2p.local_tester` will check the customers files periodically.
+    This constant controls that - seconds between two calls.
+    """
+    return 20              
 
 def DefaultLocaltesterValidateTimeout():
-    return 120 * 60               #every 120 min
+    """
+    A period in seconds to call `Validate` action of the local tester. 
+    """
+    return 120 * 60               
 
 def DefaultLocaltesterUpdateCustomersTimeout():
-    return 5 * 60                 #every 5 min
+    """
+    A period in seconds to call `UpdateCustomers` action of the local tester. 
+    """
+    return 5 * 60               
 
 def DefaultLocaltesterSpaceTimeTimeout():
-    return 5 * 60                 #every 10 min
-
-def DefaultSignerSendingDelay():
-    return 0.05
-
-def DefaultSignerReceivingDelay():
-    return 0.1
-
-def DefaultSignerPingDelay():
-    return 1.0
+    """
+    A period in seconds to call `SpaceTime` action of the local tester. 
+    """
+    return 5 * 60          
 
 def MinimumUsernameLength():
+    """
+    A minimum possible user name length.
+    """
     return 3
 
 def MaximumUsernameLength():
+    """
+    A maximum possible user name length.
+    """
     return 20
 
 def DefaultDonatedMb():
+    """
+    Default donated space value - user can set this at any moment in the settings.
+    """
     return 8*1024
 
 def DefaultNeededMb():
+    """
+    Default needed space value.
+    """
     return 4*1024
 
 def MinimumNeededMb():
+    """
+    Minimum needed Megabytes - I really do not want to allow user to set needed space to zero.
+    So need to request at least 1Mb from the network.
+    """
     return 1
 
 def MinimumDonatedMb():
+    """
+    Minimum donated space amount in Megabytes - need to donate at least 2 Mb right now.
+    """
     return 2
 
 def DefaultBackupBlockSize():
+    """
+    Default block size in bytes, user can set this in settings.
+    We split a backed up data into blocks of equal size and 
+    perform RAID operation on every block - one by one.  
+    """
     return 256 * 1024
 
 def DefaultBackupMaxBlockSize():
+    """
+    The maximum default block size, user can set this in the settings.
+    """
     return 10 * 1024 * 1024
 
 def MinimumBandwidthInLimitKBSec():
+    """
+    Not used, idea was to limit the minimum bandwidth given to DHN.
+    """
     return 10
 
 def MinimumBandwidthOutLimitKBSec():
+    """
+    Not used.
+    """
     return 10
 
 def CentralKillNotAliveUserAfter():
-    return 60 #kill user after X days
+    """
+    Central server will remove 'dead' users from the network.
+    This is a number of days which user can stay off line before he will be killed. 
+    """
+    return 60 
 
 def FireHireMinimumDelay():
-    return 60 * 15 # do not want to fire suppliers too often, 15 minutes interval 
+    """
+    Really do not want to fire suppliers too often, so use 15 minutes interval.
+    """
+    return 60 * 15  
 
 def BackupDBSynchronizeDelay():
-    # TEST
-    # return 5
-    return 60 * 5 # save backup index database no more than one time per 5 min
+    """
+    Save backup index database no more than one time per every 5 min.
+    """
+    return 60 * 5 
 
 def MaxDeletedBackupIDsToKeep():
-    return 100 # how many deleted backupIDs do we want to hold on to in backup db?
+    """
+    How many deleted backup IDs do we want to hold on to in backup db.
+    Not used.
+    """
+    return 100 
 
 def DefaultBitCoinCostPerDHNCredit():
-    # let's calculate this.:
-    # 1 DHN ~ 1 US $ - this is our default exchange rate
-    # 1 BTC ~ 130 $ US on 26 Sep 2013 and still going up 
-    # so 1 DHN is about 0.00769 BTC if we want to keep DHN to $ US exchange rate
-    # let's decrease it 10 times or even more so people can have flexible market
-    # and let's trade at least 1 DHN at once, lower values seems very small
-    # another one thing is that BitCoins have minimum transaction amount: 0.00005430 BTC
+    """
+    Let's calculate this.:
+        1)  1 DHN ~ 1 US $ - this is our default exchange rate.
+        2)  1 BTC ~ 130 $ US on 26 Sep 2013 and still going up - this  
+        3)  so 1 DHN is about 0.00769 BTC if we want to keep DHN to $ US exchange rate
+        4)  let's decrease it 10 times or even more so people can have flexible market
+            and let's trade at least 1 DHN at once, lower values seems very small
+            another one thing is that BitCoins have minimum transaction amount: 0.00005430 BTC
+    """
     return 0.0005 
 
-#---STRINGS----------------------------------------------------------------------------
+#------------------------------------------------------------------------------ 
+#---CONSTANTS ( STRINGS ) ----------------------------------------------------------------------------
 
 def ApplicationName():
+    """
+    May be one day we decide to do some rebranding - so this can be useful method. :-)
+    But this is not used at the moment. 
+    """
     return 'DataHaven.NET'
 
 def CentralID():
+    """
+    IDURL of the Central server.
+    """
     return 'http://identity.datahaven.net/dhncentral.xml'
 
 def MoneyServerID():
-    # TODO should be something like dhnpayments
+    """
+    IDURL of the Money server to get payments and so exchange $ US for DHN credits.
+    TODO: should be something like dhnpayments
+    """
     return 'http://identity.datahaven.net/offshore.xml'
 
 def MarketServerID():
-    # TODO dhnmarket seems to be fine
-    # return 'http://identity.datahaven.net/wwww.xml'
-    # return 'http://identity.datahaven.net/veselin-ubuntu-1024.xml'
+    """
+    IDURL of the Market server to trade DHN credits for bitcoins.
+    """
     return 'http://identity.datahaven.net/dhnmarket.xml'
 
 def MarketPlaceURL():
+    """
+    A public location of the Market Place.
+    """
     return 'http://datahaven.net:%d/' % MarketServerWebPort()
 
 def MarketServerBitCoinAddress():
-    return "1467zVrKrexBQTM3uyQCZCgAzKa5AFBcm3" # veselin Dell
+    """
+    A bitcoin address to receive payments.
+    """
+    return "1467zVrKrexBQTM3uyQCZCgAzKa5AFBcm3" # Veselin Dell machine
     return "1QAhYF3n1vvpZRh6nxkicERtmiHVL5tJbP" # caesarion.ru
 
-def ListFilesFormat():         #  argument to ListFiles command to say format to return the data in
-    return "Compressed"        #  "Text", "Compressed" 
+def ListFilesFormat():         
+    """
+    Argument to ListFiles command to say format to return the data in.
+    Can be "Text" or "Compressed".
+    TODO: add "Encrypted" format 
+    """
+    return "Compressed"        
 
 def DefaultEccMapName():
+    """
+    This is a ecc map name used by default - must comply with `DefaultDesiredSuppliers()`. 
+    """
     return 'ecc/4x4'
 
 def HMAC_key_word():
+    """
+    I was playing with HMAC hash, this is a "secret password" :-)
+    """
     return 'Vince+Veselin+Derek=BigMoneyAndSuccess'
 
 def DefaultRepo(): 
+    """
+    DataHaven.NET software can be updated from different "repositories".
+    Right now we have three locations for Windows (testing, development and stable) 
+    and one for Linux (going to add another one).
+    This is to be able to run different code in the network and so be able to test new features
+    without any chances to broke the whole network.
+    """
     return 'devel'
 
 def UpdateLocationURL(repo=DefaultRepo()):
+    """
+    Return a given repository location for Windows.
+    """
     if repo == 'devel':
         return 'http://datahaven.net/repo/devel/'
     elif repo == 'stable':
@@ -273,19 +480,40 @@ def UpdateLocationURL(repo=DefaultRepo()):
     else: 
         return 'http://identity.datahaven.net/downloads/'
 
-def CurrentVersionDigestsFilename():
-    return 'version.txt'
-
 def FilesDigestsFilename():
+    """
+    This file keeps MD5 checksum of all binary files for Windows release.
+    Every Windows repository have such file, this is link for "stable" repo:
+        http://datahaven.net/repo/stable/info.txt
+    Local copy of this file is also stored in the file [DHN data dir]/metadata/info.
+    Our dhnstarter.exe read local copy and than can request a public copy and compare the content.
+    If some files were changed or new files added to the repo - it will update the local binaries from repo.
+    The idea is to update only modified files when new release will be published.
+    """
     return 'info.txt'
 
-def UpdateFolder():
-    return 'windows/'
+def CurrentVersionDigestsFilename():
+    """
+    This file keeps a MD5 checksum of the file "info.txt", see `FilesDigestsFilename()`.
+    It is also placed in the Windows repository:
+        http://datahaven.net/repo/stable/version.txt    
+    If some binary files have been changed - the file "info.txt" also changed and 
+    its checksum also.
+    Locally this is stored in the file [DHN data dir]/metadata/version.
+    The software check "version.txt" first and if it is not the same - further download "info.txt". 
+    """
+    return 'version.txt'
 
 def LegalUsernameChars():
+    """
+    A set of correct chars that can be used for user account names.
+    """
     return set("abcdefghijklmnopqrstuvwxyz0123456789-_")
 
 def NotRealUsers():
+    """
+    A list of user IDs to not use in the stats - this is our test machines, not real users.   
+    """
     return ('http://identity.datahaven.net/cate2gpa.xml',
             'http://identity.datahaven.net/dcdemo.xml',
             'http://identity.datahaven.net/dctest23.xml',
@@ -311,13 +539,20 @@ def NotRealUsers():
             'http://identity.datahaven.net/vista3.xml',
             'http://identity.datahaven.net/workoffshoreai.xml',)
 
-#---DIRECTORY PATHS----------------------------------------------------------------------------
+#------------------------------------------------------------------------------ 
+#--- FOLDERS ----------------------------------------------------------------------------
 
 def BaseDirDefault():
+    """
+    A default location for DataHaven.NET data folder.
+    All of the paths below should be under some base directory.
+    """
     return os.path.join(os.path.expanduser('~'), '.datahaven')
 
-# PREPRO - all of the paths below should be under some base directory
 def BaseDirLinux():
+    """
+    Default data folder location for Linux users.
+    """
     new_path = os.path.join(os.path.expanduser('~'), '.datahaven')
     if os.path.isdir(new_path):
         return new_path
@@ -327,6 +562,9 @@ def BaseDirLinux():
     return new_path
 
 def BaseDirWindows():
+    """
+    Default data folder location for Windows users.
+    """
     if not dhnio.Windows():
         return BaseDirDefault()
     #return os.path.join(os.path.expanduser('~'), 'Application Data', 'DataHavenNet')
@@ -334,9 +572,15 @@ def BaseDirWindows():
     return os.path.join(os.environ.get('APPDATA', default_path), 'DataHaven.NET')
 
 def BaseDirMac():
+    """
+    Default data folder location for MacOS users.
+    """
     return os.path.join(os.path.expanduser('~'), '.datahaven')
 
 def DefaultBaseDir():
+    """
+    A portable method to get the default data folder location.  
+    """
     if dhnio.Windows():
         return BaseDirWindows()
     elif dhnio.Linux():
@@ -346,291 +590,506 @@ def DefaultBaseDir():
     return BaseDirDefault()
 
 def BaseDir():
+    """
+    Return current data folder location, also call `init()` to be sure all things were configured.
+    """
     global _BaseDirPath
     init()
     return _BaseDirPath
 
 def BaseDirPathFileName():
+    """
+    You can configure DataHaven.NET software to use another place for data folder.
+    Say you want to store DHN files on another disk.
+    In the binary folder file "basedir.txt" can be created and it will keep the path to the data folder. 
+    """
     return os.path.join(dhnio.getExecutableDir(), 'basedir.txt')
 
-_NeighbourBaseDirPath = ''
-def NeighbourBaseDir():
-    global _NeighbourBaseDirPath
-    if _NeighbourBaseDirPath == '':
-        _NeighbourBaseDirPath = str(os.path.abspath(os.path.join(
-            dhnio.getExecutableDir(),
-            '..',
-            '.datahaven')))
-    return _NeighbourBaseDirPath
-
 def RestoreDir():
+    """
+    Default location to place restored files and folders.
+    """
     return os.path.expanduser('~')
-    #return BaseDir()
 
 def WindowsBinDir():
+    """
+    Under Windows executable files is placed in the [DHN data folder]/bin/.
+    This is because Windows Vista and later not allow to write to "Program files" folder. 
+    """
     return os.path.join(BaseDir(), 'bin')
 
-def RaidDir():
-    return os.path.join(BaseDir(), "raiddir")
-
 def MetaDataDir():
+    """
+    Return current location of the "metadata" folder - most important config files is here.
+    """
     return os.path.join(BaseDir(), "metadata")
 
 def TempDir():
+    """
+    A place for temporary DHN files, we really need some extra disk space to operate.
+    TODO: need to add some stuff to control how much extra space we use and be able limit that. 
+    """
     return os.path.join(BaseDir(), "temp")
 
 def IdentityCacheDir():
+    """
+    See `lib.identitycache` module, this is a place to store user's identity files to have them on hands.
+    """
     return os.path.join(BaseDir(), "identitycache")
 
 def BackupsDBDir():
+    """
+    When you run the backup the following actions occur: 
+        - data is read from the local disk and compressed 
+        - entire volume is divided into blocks 
+        - blocks encrypted with user Key 
+        - each block is divided into pieces with redundancy - through RAID procedure 
+        - pieces of all blocks are stored on a local disk 
+        - pieces are transferred to suppliers
+        - optionally, local pieces can be removed after delivering to suppliers 
+    This returns a default local folder location where those pieces is stored.
+    User can configure that in the settings. 
+    """
     return os.path.join(BaseDir(), 'backups')
 
+def MessagesDir():
+    """
+    A default folder to store sent/received messages.
+    """
+    return os.path.join(BaseDir(), 'messages')
+
+def ReceiptsDir():
+    """
+    A default folder to store receipts.
+    """
+    return os.path.join(BaseDir(), 'receipts')
+
 def Q2QDir():
+    """
+    I was playing with vertex protocol, this is a place for q2q config files.
+    """
     return os.path.join(BaseDir(), 'q2qcerts')
 
 def LogsDir():
+    """
+    Place for log files.
+    """
     return os.path.join(BaseDir(), 'logs')
 
 def SuppliersDir():
+    """
+    Local folder location to keep suppliers info files.
+    """
     return os.path.join(BaseDir(), 'suppliers')
 
 def BandwidthInDir():
+    """
+    Daily stats for incoming bandwidth is placed in that location.
+    Those files is sent to Central server to report own stats.  
+    """
     return os.path.join(BaseDir(),"bandin")
 
 def BandwidthOutDir():
+    """
+    Daily stats for outgoing bandwidth is placed in that location.
+    """
     return os.path.join(BaseDir(),"bandout")
 
 def RatingsDir():
+    """
+    In that location DHN software keeps a rating stats for known users. 
+    """
     return os.path.join(BaseDir(), 'ratings')
 
 def CSpaceDir():
+    """
+    Location for CSpace config files.
+    """
     return os.path.join(BaseDir(), 'cspace')
 
 def CSpaceSettingsDir():
+    """
+    This is a CSpace settings folder location.
+    """
     if dhnio.Windows():
         return os.path.join(CSpaceDir(), '_CSpace', 'Settings')
     else:
         return os.path.join(CSpaceDir(), '.CSpace', 'Settings')
 
 def CSpaceProfilesDir():
+    """
+    This is a CSpace profiles folder location.
+    """
     if dhnio.Windows():
         return os.path.join(CSpaceDir(), '_CSpaceProfiles')
     else:
         return os.path.join(CSpaceDir(), '.CSpaceProfiles')
 
-#---FILES PATHS--------------------------------------------------------------------------- 
+#------------------------------------------------------------------------------ 
+#--- FILES --------------------------------------------------------------------------- 
 
 def KeyFileName():
+    """
+    Location of user's Private Key file.
+    """
     return os.path.join(MetaDataDir(), "mykeyfile")
 
 def KeyFileNameLocation():
+    """
+    User can set another location for his Private Key file - he can use USB stick to keep his Key.
+    After DHN stars he can remove the USB stick and keep it in safe place.
+    So DHN will keep user's key in the RAM only - this way you can have more protection for your Key. 
+    If your machine is stolen - thief can not get your Private key. 
+    But you must be sure that machine was switched off - the RAM is erased when power is off.
+    This file keeps alternative location of your Private Key.
+    """
     return KeyFileName() + '_location'
 
 def SupplierIDsFilename():
-    # IDs for places that store data for us
+    """
+    IDs for places that store data for us. Keeps a list of IDURLs of our suppliers.
+    """
     return os.path.join(MetaDataDir(), "supplierids")
 
 def CustomerIDsFilename():
-    # IDs for places we store data for
+    """
+    IDs for places we store data for, keeps a list of IDURLs of our customers.
+    """
     return os.path.join(MetaDataDir(), "customerids")
 
 def CorrespondentIDsFilename():
-    # people we get messages from
+    """
+    People we get messages from and other stuff not related to backup/restore process. 
+    """
     return os.path.join(MetaDataDir(), "correspondentids")
 
 def LocalIdentityFilename():
+    """
+    A local copy of user's identity file is stored here.
+    When doing any changes in the identity file - this appear here firstly.
+    Further local identity file is propagated to the identity server 
+    and all our contacts so they got the fresh copy asap.
+    """
     return os.path.join(MetaDataDir(), "localidentity")
 
 def LocalIPFilename():
-    # file contains string like 192.168.100.33
+    """
+    File contains string like "192.168.12.34" - local IP of that machine.
+    """
     return os.path.join(MetaDataDir(), "localip")
 
 def ExternalIPFilename():
-    # file contains string like 207.42.133.2
+    """
+    File contains string like 201.42.133.2 - external IP of that machine.
+    """
     return os.path.join(MetaDataDir(), "externalip")
 
 def DefaultTransportOrderFilename():
+    """
+    Location for file that keeps an order of used transports.
+    """
     return os.path.join(MetaDataDir(), "torder")
 
 def UserNameFilename():
-    # file contains something like "guesthouse"
+    """
+    File contains something like "guesthouse" - user account name.
+    """
     return os.path.join(MetaDataDir(), "username")
 
 def UserConfigFilename():
+    """
+    File to keep a configurable user settings in XML format.
+    See `lib.userconfig` module.
+    """
     return os.path.join(MetaDataDir(), "userconfig")
 
 def GUIOptionsFilename():
+    """
+    A small file to keep GUI config.
+    For example windows positions and sizes after last execution of the program.
+    """
     return os.path.join(MetaDataDir(), "guioptions")
 
 def UpdateSheduleFilename():
+    """
+    Under Windows the update process is done in the dhnstarter.exe file.
+    Periodically, the main file dhnmain.exe request file "version.txt" (from currently used repository) 
+    to check for new software release.
+    Main process can restart itself thru dhnstarter to be able to update the binaries.
+    User can set a schedule to check for updates in the settings. 
+    """
     return os.path.join(MetaDataDir(), "updateshedule")
 
 def LocalPortFilename():
+    """
+    This is a file to keep randomly generated port number 
+    for HTTP server to provide a Web Access to DHN main process.
+    See module `p2p.webcontrol` for more details.  
+    """
     return os.path.join(MetaDataDir(), 'localport')
 
 def BackupInfoFileNameOld():
+    """
+    Long time ago backup data base were stored in that file. Obsolete, see `BackupIndexFileName()`..
+    """
     return "backup_info.xml"
 
 def BackupInfoFileName():
-    # return "backup_info.xml"
+    """
+    Obsolete, see `BackupIndexFileName()`.
+    """
     return 'backup_db'
 
 def BackupInfoEncryptedFileName():
+    """
+    Obsolete, see `BackupIndexFileName()`.
+    """
     return 'backup_info'
 
 def BackupIndexFileName():
+    """
+    This is backup data base index file location.
+    This store folder and files names and locations with path ID's and some extra info.
+    Located in the file [DHN data dir]/metadata/index.
+    Also this file is saved on suppliers in encrypted state.
+    TODO: 
+        - need to store files checksums
+        - need to store file and folders access modes - just like in Linux
+        - need to store user and group for files and folders - like in Linux 
+    """
     return 'index'
 
 def BackupInfoFileFullPath():
+    """
+    Obsolete.
+    """
     return os.path.join(MetaDataDir(), BackupInfoFileName())
 
 def BackupInfoFileFullPathOld():
+    """
+    Obsolete.
+    """
     return os.path.join(MetaDataDir(), BackupInfoFileNameOld())
 
 def BackupIndexFilePath():
+    """
+    A full local path for `BackupIndexFileName` file.
+    """
     return os.path.join(MetaDataDir(), BackupIndexFileName()) 
 
-def InstalledDateFileName():
-    return os.path.join(MetaDataDir(), 'installed')
-
 def SupplierPath(idurl, filename=None):
+    """
+    A location to given supplie's data.
+    If `filename` is provided - return a full path to that file.
+    Currently those data are stored for every supplier:
+        - "connected" : date and time when this man become our suppler 
+        - "disconnected" : date and time when this suppler was fired
+        - "listfiles" : a list of our local files stored on his machine  
+    """
     if filename is not None:
         return os.path.join(SuppliersDir(), nameurl.UrlFilename(idurl), filename)
     return os.path.join(SuppliersDir(), nameurl.UrlFilename(idurl))
 
 def SupplierListFilesFilename(idurl):
+    """
+    Return a "listfiles" file location for given supplier.
+    """
     return os.path.join(SupplierPath(idurl), 'listfiles')
 
-def TransportLogFile():
-    return (os.path.join(LogsDir(), 'transport.log'))
-
-def DebugLogFile():
-    return (os.path.join(LogsDir(), 'debug.log'))
-
 def LocalTesterLogFilename():
+    """
+    A file name path where dhntester.py will write its logs.
+    """
     return os.path.join(LogsDir(), 'dhntester.log')
 
-def MiniupnpcLogFilename():
-    return os.path.join(LogsDir(), 'miniupnpc.log')
-
 def MainLogFilename():
+    """
+    A prefix for file names to store main process logs.
+    """
     return os.path.join(LogsDir(), 'dhn')
 
-def TwistedLogFilename():
-    return os.path.join(LogsDir(), 'twisted.log')
-
 def UpdateLogFilename():
+    """
+    A place to store logs from update porcess.
+    """
     return os.path.join(LogsDir(), 'dhnupdate.log')
 
-def RunUpdateLogFilename():
-    return os.path.join(LogsDir(), 'runupdate.log')
-
-def SignerLogFilename():
-    return os.path.join(LogsDir(), 'dhnsigner.log')
-
-def RunupnpcLogFilename():
-    return os.path.join(LogsDir(), 'runupnpc.log')
-
-def FireHireLogFilename():
-    return os.path.join(LogsDir(), 'fire_hire.log')
-
 def CSpaceLogFilename():
+    """
+    Logs from `lib.transport_cspace` module goes here.
+    """
     return os.path.join(LogsDir(), 'cspace.log')
 
 def AutomatsLog():
+    """
+    All state machines logs in the main process is written here.
+    """
     return os.path.join(LogsDir(), 'automats.log')
 
 def RepoFile():
+    """
+    A file to store info about currently used repository. 
+    """
     return os.path.join(MetaDataDir(), 'repo')
 
 def VersionFile():
+    """
+    A place for local copy of "version.txt" file, see `CurrentVersionDigestsFilename()`. 
+    """
     return os.path.join(MetaDataDir(), 'version')
 
 def InfoFile():
+    """
+    A place for local copy of "info.txt" file, see `FilesDigestsFilename()`.
+    """ 
     return os.path.join(MetaDataDir(), 'info')
 
 def RevisionNumberFile():
+    """
+    We keep track of Subversion revision number and store it in the binary folder.
+    This is a sort of "product version".
+    Probably not very best idea, we need to use a widely used software version format. 
+    """
     return os.path.join(dhnio.getExecutableDir(), 'revnum.txt')
 
 def CustomersSpaceFile():
+    """
+    This file keeps info about our customers - how many megabytes every guy takes from us. 
+    """
     return os.path.join(MetaDataDir(), 'space')
 
 def BalanceFile():
+    """
+    This file keeps our current DHN balance - two values: 
+        - transferable funds
+        - not transferable funds 
+    """
     return os.path.join(MetaDataDir(), 'balance')
 
 def CertificateFiles():
+    """
+    The idea is to have a global certificate for DataHaven.NET server, just like https works.
+    """
     return [    os.path.join(MetaDataDir(), 'dhn.cer'),
                 os.path.join('.', 'dhn.cer'),
                 os.path.join(dhnio.getExecutableDir() ,'dhn.cer'),]
 
 def CSpaceSavedProfileFile():
+    """
+    This file is used in the CSpace code.
+    You can have different profiles and this points to currently used profile.
+    """
     return os.path.join(CSpaceSettingsDir(), 'SavedProfile') 
 
 def CSpaceSavedPasswordFile():
+    """
+    This file is used in the CSpace code.
+    """
     return os.path.join(CSpaceSettingsDir(), 'SavedPassword') 
 
 def CSpaceRememberKeyFile():
+    """
+    This file is used in the CSpace code.
+    """
     return os.path.join(CSpaceSettingsDir(), 'RememberKey') 
 
-#---BINARY FILES PATHS--------------------------------------------------------------------------- 
+#------------------------------------------------------------------------------ 
+#--- BINARY FILES --------------------------------------------------------------------------- 
 
 def WindowsStarterFileName():
+    """
+    Return a file name of the Windows starte: "dhnstarter.exe".
+    """
     return 'dhnstarter.exe'
 
 def WindowsStarterFileURL(repo=DefaultRepo()):
+    """
+    Return a public URL of the "dhnstarter.exe" file, according to given `repo`.
+    When we need to modify the starter code we place it in the repository along with other binaries.
+    It will be downloaded by all users and updated.  
+    """
     return UpdateLocationURL(repo) + 'windows/' + WindowsStarterFileName()
 
-def getAutorunFilename():
-    if dhnio.Windows() and dhnio.isFrozen():
-        path = os.path.join(dhnio.getExecutableDir(), WindowsStarterFileName())
-        if not os.path.isfile(path):
-            path = dhnio.getExecutableFilename()
-    else:
-        path = dhnio.getExecutableFilename()
-    return path
-
 def getIconLaunchFilename():
-    #return os.path.join(dhnio.getExecutableDir(), WindowsStarterFileName())
+    """
+    Not used.
+    For Windows platforms this should target to executable file to run when clicked on Desktop icon. 
+    """
     return os.path.join(dhnio.getExecutableDir(), 'dhnmain.exe')
 
 def getIconLinkFilename():
+    """
+    A file name for Desktop icon for Windows users.
+    """
     return 'Data Haven .NET.lnk'
 
 def IconFilename():
+    """
+    Application icon file name.
+    """
     return 'dhnicon.ico'
 
 def IconsFolderPath():
+    """
+    A folder name where application icons is stored.
+    PREPRO: may be we better use another name: "media"
+            because we may need not only "icons" but also other data files
+    """
     return os.path.join(dhnio.getExecutableDir(), 'icons')
 
 def FontsFolderPath():
+    """
+    A folder name where application "fons" is stored. 
+    """
     return os.path.join(dhnio.getExecutableDir(), 'fonts')
 
 def FontImageFile():
+    """
+    A font to use to print text labels in the GUI.
+    """
     return os.path.join(FontsFolderPath(), 'Arial_Narrow.ttf')
 
-#---MERCHANT ID AND LINK----------------------------------------------------------------------------
+#------------------------------------------------------------------------------ 
+#--- MERCHANT ID AND LINK ----------------------------------------------------------------------------
 
 def MerchantID():
+    """
+    Our merchant ID to accept payments from credit cards. 
+    """
+    # return 'AXA_DH_TESTKEY1'
     return 'AXA_DH_02666084001'
-##    return 'AXA_DH_TESTKEY1'
 
 def MerchantURL():
+    """
+    A URL of the 4CS Bank page to do payments.
+    """
+    # return 'https://merchants.4csonline.com/DevTranSvcs/tp.aspx'
     return 'https://merchants.4csonline.com/TranSvcs/tp.aspx'
-##    return 'https://merchants.4csonline.com/DevTranSvcs/tp.aspx'
 
-#---SERVER HOST NAMES----------------------------------------------------------------------------
+#------------------------------------------------------------------------------ 
+#--- SERVER HOST NAMES ----------------------------------------------------------------------------
 
 def IdentityServerName():
-    return "identity.datahaven.net"
-
-def DefaultIdentityServer():
+    """
+    The core method, a host name of our main Identity server.
+    The whole idea of identity files is that they can be stored anywhere.
+    User can decide to put his identity file on his own host, or he can use some another trusted public host.
+    All identity files is signed with user's Key and client code should verify signatures.
+    Even if someone tried to fake my identity - this will be refused by other nodes in the network.  
+    """
     return "identity.datahaven.net"
 
 def DefaultQ2QServer():
+    """
+    Not used, a host name for our public Q2Q server. 
+    """
     # return 'work.offshore.ai'
     return 'datahaven.net'
 
 def MoneyServerName():
+    """
+    A host name of our money server - to receive payments from users.
+    """
 #    return 'localhost'
 #    return '67.207.147.183' #central
 #    return "central.net"
@@ -639,98 +1098,158 @@ def MoneyServerName():
 #    return 'datahaven.net'
     return "offshore.ai"
 
-def UpdateServerName():
-    return 'localhost'
-
 def CentralStatsURL():
+    """
+    A URL to see a stats of all users.
+    """
 #    return 'http://work.offshore.ai/~veselin/' - #that's old location
     return 'http://identity.datahaven.net/statistics/'
 
+#------------------------------------------------------------------------------ 
 #---PORT NUMBERS----------------------------------------------------------------------------
 
 def DefaultSSHPort():
+    """
+    A default port for `lib.transport_ssh`.
+    """
     return 5022
 
-# This should be same for all identity servers everywhere
 def IdentityServerPort():
+    """
+    Identity server stores identity files, it works in that way:
+        1) anyone can request any stored identity file from any place in the world
+        2) anyone can send his identity file over transport_tcp to identity server
+        3) identity file must be digitaly signed, server should verify the signature
+        4) if signature is fine - server will save (or overwrite existing) the file
+        5) server should refuse incorrect or faked identities
+        6) someone can store incorrect or faked identities on his own server, but nodes in network will refuse those identities
+        7) you can use different ways to transfer your identity file to your own id server - do it by your self   
+    This is a port number of our identity file to receive identity files from users. 
+    This should be same for all identity servers everywhere.
+    """
     return 7773
 
 def IdentityWebPort():
+    """
+    Our public identity server use standard web port number to publish identity files - 80.
+    """
     return 80
 
 def MarketServerWebPort():
+    """
+    Market server Web port number.
+    """
     return 8085
 
 def MoneyServerPort():
+    """
+    Money server Web port number.
+    """
     return 9898
 
 def DefaultTCPPort():
+    """
+    A default port number for transport_tcp.
+    """
     return 7771
 
 def DefaultUDPPort():
+    """
+    A default port number for transport_udp.
+    """
     return 0
 
-def UpdateServerPort():
-    return 8301
-
 def DefaultHTTPPort():
+    """
+    A default port number for transport_http, not used.
+    """
     return 9786
 
 def DefaultWebLogPort():
+    """
+    A port number for HTTP server to print program logs. 
+    """
     return 9999
 
 def DefaultWebTrafficPort():
+    """
+    A port number for HTTP server to print program packets traffic. 
+    """
     return 9997
 
-#---USER FOLDERS----------------------------------------------------------------------------
-
-##def CustomersDataDir():
-##    return uconfig("other.CustomerDataDirectory").strip()
-
-##def MessagesDir():
-##    return uconfig("other.MessagesDirectory").strip()
-##
-##def ReceiptsDir():
-##    return uconfig("other.ReceiptsDirectory").strip()
+#------------------------------------------------------------------------------ 
+#--- USER FOLDERS ----------------------------------------------------------------------------
 
 def getCustomersFilesDir():
+    """
+    Alias to get a user donated location from settings. 
+    """
     return uconfig('folder.folder-customers').strip()
 
 def getCustomerFilesDir(idurl):
+    """
+    Alias to get a given customer's files inside our donated location from settings. 
+    """
     return os.path.join(getCustomersFilesDir(), nameurl.UrlFilename(idurl))
 
 def getLocalBackupsDir():
+    """
+    Alias to get local backups folder from settings, see `BackupsDBDir()`.
+    """
     return uconfig('folder.folder-backups').strip()
 
 def getRestoreDir():
+    """
+    Alias for restore location, see `RestoreDir()`.
+    """
     return uconfig('folder.folder-restore').strip()
 
 def getMessagesDir():
+    """
+    Alias to get from user config a folder location where messages is stored. 
+    """
     return uconfig('folder.folder-messages').strip()
 
 def getReceiptsDir():
+    """
+    Alias to get from user config a folder location where receipts is stored.
+    """
     return uconfig('folder.folder-receipts').strip()
 
 def getTempDir():
-    #if value is empty value - let's use default (system) temporary folder
-    #return uconfig('folder.folder-temp').strip()
+    """
+    An alias for `TempDir()`.
+    """
     return TempDir()
 
-#---PROXY SERVER OPTIONS---------------------------------------------------------------------------
+#------------------------------------------------------------------------------ 
+#--- PROXY SERVER OPTIONS ---------------------------------------------------------------------------
 
 def enableProxy(enable=None):
+    """
+    Enable/disable using of proxy server.
+    """
     if enable is None:
         return uconfig('network.network-proxy.network-proxy-enable').lower() == 'true'
     uconfig().set('network.network-proxy.network-proxy-enable', str(enable))
     uconfig().update()
 
 def getProxyHost():
+    """
+    Return proxy server host from settings. 
+    """
     return uconfig('network.network-proxy.network-proxy-host').strip()
 
 def getProxyPort():
+    """
+    Return proxy server port number from settings. 
+    """
     return uconfig('network.network-proxy.network-proxy-port').strip()
 
 def setProxySettings(d):
+    """
+    Set proxy settings via dictionary, see `lib.dhnnet.detect_proxy_settings` for more details.
+    """
     if d.has_key('host'):
         uconfig().set('network.network-proxy.network-proxy-host', str(d.get('host','')))
     if d.has_key('port'):
@@ -744,6 +1263,9 @@ def setProxySettings(d):
     uconfig().update()
 
 def getProxySettingsDict():
+    """
+    Return a proxy settings from user config in dictionary.
+    """
     return {
          'host':        uconfig('network.network-proxy.network-proxy-host').strip(),
          'port':        uconfig('network.network-proxy.network-proxy-port').strip(),
@@ -752,6 +1274,9 @@ def getProxySettingsDict():
          'ssl':         uconfig('network.network-proxy.network-proxy-ssl').strip(), }
 
 def update_proxy_settings():
+    """
+    Calls `lib.dhnnet.detect_proxy_settings()` to check current system proxy server settings.
+    """
     import dhnnet
     dhnnet.init()
     if enableProxy():
@@ -770,28 +1295,31 @@ def update_proxy_settings():
         dhnio.Dprint(4, 'PASSWORD:  ' + ('*' * len(dhnnet.get_proxy_password())))
         dhnio.Dprint(4, 'SSL:       ' + dhnnet.get_proxy_ssl())
 
-
+#------------------------------------------------------------------------------ 
 #---OTHER USER CONFIGURATIONS---------------------------------------------------------------------------
 
-def getBandOutLimit(): # in kilo bytes per second
+def getBandOutLimit(): 
+    """
+    Get from user config current outgoing bandwidth limit in kilo bytes per second.
+    """
     try:
         return int(uconfig('network.network-send-limit'))
     except:
         return 0
 
-def getBandInLimit(): # in kilo bytes per second
+def getBandInLimit():
+    """
+    Get from user config current incoming bandwidth limit in kilo bytes per second.
+    """
     try:
         return int(uconfig('network.network-receive-limit'))
     except:
         return 0
 
-def FireInactiveSupplierIntervalHours():  # after a supplier hasn't been heard from in
-    return uconfig('other.FireInactiveSupplierIntervalHours')
-
-def ShowBarcode():  # do we want to show barcode stuff?  At the moment only for debuggers
-    return uconfig('other.ShowBarcode')
-
 def getTransportPort(proto):
+    """
+    Get a port number for some tranports from user config.  
+    """
     if proto == 'tcp':
         return getTCPPort()
     if proto == 'udp':
@@ -802,222 +1330,386 @@ def getTransportPort(proto):
         return getHTTPPort()
 
 def getTCPPort():
+    """
+    Get a port number for tranport_tcp from user config.  
+    """
     return uconfig("transport.transport-tcp.transport-tcp-port")
 
 def setTCPPort(port):
+    """
+    Set a port number for tranport_tcp in the user config.  
+    """
     uconfig().set("transport.transport-tcp.transport-tcp-port", str(port))
     uconfig().update()
 
 def enableTCP(enable=None):
+    """
+    Switch on/off transport_tcp in the settings or get current state.
+    Note : transport_tcp is always available for identites to id server.
+    """
     if enable is None:
         return uconfig('transport.transport-tcp.transport-tcp-enable').lower() == 'true'
     uconfig().set('transport.transport-tcp.transport-tcp-enable', str(enable))
     uconfig().update()
 
 def enableTCPsending(enable=None):
+    """
+    Switch on/off sending over transport_tcp in the settings or get current state.
+    """
     if enable is None:
         return uconfig('transport.transport-tcp.transport-tcp-sending-enable').lower() == 'true'
     uconfig().set('transport.transport-tcp.transport-tcp-sending-enable', str(enable))
     uconfig().update()
     
 def enableTCPreceiving(enable=None):
+    """
+    Switch on/off receiving over transport_tcp in the settings or get current state.
+    """
     if enable is None:
         return uconfig('transport.transport-tcp.transport-tcp-receiving-enable').lower() == 'true'
     uconfig().set('transport.transport-tcp.transport-tcp-receiving-enable', str(enable))
     uconfig().update()
 
 def getUDPPort():
+    """
+    Get a port number for tranport_udp from user config.  
+    """
     return uconfig("transport.transport-udp.transport-udp-port")
 
 def setUDPPort(port):
+    """
+    Set a port number for tranport_udp in the user config.  
+    """
     uconfig().set("transport.transport-udp.transport-udp-port", str(port))
     uconfig().update()
 
 def enableUDP(enable=None):
+    """
+    Switch on/off transport_udp in the settings or get current state.
+    """
     if enable is None:
         return uconfig('transport.transport-udp.transport-udp-enable').lower() == 'true'
     uconfig().set('transport.transport-udp.transport-udp-enable', str(enable))
     uconfig().update()
 
 def enableUDPsending(enable=None):
+    """
+    Switch on/off sending over transport_udp in the settings or get current state.
+    """
     if enable is None:
         return uconfig('transport.transport-udp.transport-udp-sending-enable').lower() == 'true'
     uconfig().set('transport.transport-udp.transport-udp-sending-enable', str(enable))
     uconfig().update()
     
 def enableUDPreceiving(enable=None):
+    """
+    Switch on/off receiving over transport_udp in the settings or get current state.
+    """
     if enable is None:
         return uconfig('transport.transport-udp.transport-udp-receiving-enable').lower() == 'true'
     uconfig().set('transport.transport-udp.transport-udp-receiving-enable', str(enable))
     uconfig().update()
 
-def getSSHPort():
-    return uconfig("transport.transport-ssh.transport-ssh-port")
-
-def setSSHPort(port):
-    uconfig().set("transport.transport-ssh.transport-ssh-port", str(port))
-    uconfig().update()
-
-def enableSSH(enable=None):
-    if enable is None:
-        return uconfig('transport.transport-ssh.transport-ssh-enable').lower() == 'true'
-    uconfig().set('transport.transport-ssh.transport-ssh-enable', str(enable))
-    uconfig().update()
-
-def getQ2Qhost():
-    return uconfig("transport.transport-q2q.transport-q2q-host")
-
-def setQ2Qhost(host):
-    uconfig().set("transport.transport-q2q.transport-q2q-host", host)
-    uconfig().update()
-
-def getQ2Qusername():
-    return uconfig("transport.transport-q2q.transport-q2q-username")
-
-def setQ2Qusername(username):
-    uconfig().set("transport.transport-q2q.transport-q2q-username", username)
-    uconfig().update()
-
-def getQ2Qpassword():
-    return uconfig("transport.transport-q2q.transport-q2q-password")
-
-def setQ2Qpassword(password):
-    uconfig().set("transport.transport-q2q.transport-q2q-password", password)
-    uconfig().update()
-
-def getQ2Quserathost():
-    return getQ2Qusername()+'@'+getQ2Qhost()
-
-def setQ2Quserathost(userAThost):
-    username, host = userAThost.split('@')
-    setQ2Qhost(host)
-    setQ2Qusername(username)
-
-def enableQ2Q(enable=None):
-    if enable is None:
-        return uconfig('transport.transport-q2q.transport-q2q-enable').lower() == 'true'
-    uconfig().set('transport.transport-q2q.transport-q2q-enable', str(enable))
-    uconfig().update()
-
-def getHTTPPort():
-    return uconfig('transport.transport-http.transport-http-server-port')
-
-def setHTTPPort(port):
-    uconfig().set("transport.transport-http.transport-http-port", str(port))
-    uconfig().update()
-
-def getHTTPDelay():
-    return dhnmath.toInt(uconfig('transport.transport-http.transport-http-ping-timeout'), DefaultHTTPDelay())
-
-def enableHTTP(enable=None):
-    if enable is None:
-        return uconfig('transport.transport-http.transport-http-enable').lower() == 'true'
-    uconfig().set('transport.transport-http.transport-http-enable', str(enable))
-    uconfig().update()
-
-def enableHTTPServer(enable=None):
-    if enable is None:
-        return uconfig('transport.transport-http.transport-http-server-enable').lower() == 'true'
-    uconfig().set('transport.transport-http.transport-http-server-enable', str(enable))
-    uconfig().update()
-
 def enableCSpace(enable=None):
+    """
+    Switch on/off transport_cspace in the settings or get current state.
+    """
     if enable is None:
         return uconfig('transport.transport-cspace.transport-cspace-enable').lower() == 'true'
     uconfig().set('transport.transport-cspace.transport-cspace-enable', str(enable))
     uconfig().update()
 
 def enableCSPACEsending(enable=None):
+    """
+    Switch on/off sending over transport_cspace in the settings or get current state.
+    """
     if enable is None:
         return uconfig('transport.transport-cspace.transport-cspace-sending-enable').lower() == 'true'
     uconfig().set('transport.transport-cspace.transport-cspace-sending-enable', str(enable))
     uconfig().update()
     
 def enableCSPACEreceiving(enable=None):
+    """
+    Switch on/off receiving over transport_cspace in the settings or get current state.
+    """
     if enable is None:
         return uconfig('transport.transport-cspace.transport-cspace-receiving-enable').lower() == 'true'
     uconfig().set('transport.transport-cspace.transport-cspace-receiving-enable', str(enable))
     uconfig().update()
 
 def getCSpaceKeyID():
+    """
+    Get CSpace Key ID from user settings. Key ID is used to identify users in the CSpace network.
+    """
     return uconfig('transport.transport-cspace.transport-cspace-key-id')
 
 def setCSpaceKeyID(key_id):
+    """
+    Set CSpace Key ID to the settings.
+    """
     uconfig().set('transport.transport-cspace.transport-cspace-key-id', key_id)
     uconfig().update()
 
 def setCSpaceUserName(username):
+    """
+    Set CSpace user name to the settings.
+    """
     uconfig().set('transport.transport-cspace.transport-cspace-username', username)
     uconfig().update()
     
 def setCSpacePassword(password):
+    """
+    Set CSpace user password to the settings.
+    """
     uconfig().set('transport.transport-cspace.transport-cspace-password', password)
     uconfig().update()
 
+def getSSHPort():
+    """
+    Get a port number for tranport_ssh from user config, not used.  
+    """
+    return uconfig("transport.transport-ssh.transport-ssh-port")
+
+def setSSHPort(port):
+    """
+    Set a port number for tranport_ssh in the user config, not used.  
+    """
+    uconfig().set("transport.transport-ssh.transport-ssh-port", str(port))
+    uconfig().update()
+
+def enableSSH(enable=None):
+    """
+    Switch on/off transport_udp in the settings or get current state.
+    Not used, transport_ssh is turned off right now.
+    """
+    if enable is None:
+        return uconfig('transport.transport-ssh.transport-ssh-enable').lower() == 'true'
+    uconfig().set('transport.transport-ssh.transport-ssh-enable', str(enable))
+    uconfig().update()
+
+def getQ2Qhost():
+    """
+    Return q2q host from settings, not used.
+    """
+    return uconfig("transport.transport-q2q.transport-q2q-host")
+
+def setQ2Qhost(host):
+    """
+    Set q2q host, not used. The transport_q2q is turned off.
+    """
+    uconfig().set("transport.transport-q2q.transport-q2q-host", host)
+    uconfig().update()
+
+def getQ2Qusername():
+    """
+    Not used.
+    """
+    return uconfig("transport.transport-q2q.transport-q2q-username")
+
+def setQ2Qusername(username):
+    """
+    Not used.
+    """
+    uconfig().set("transport.transport-q2q.transport-q2q-username", username)
+    uconfig().update()
+
+def getQ2Qpassword():
+    """
+    Not used.
+    """
+    return uconfig("transport.transport-q2q.transport-q2q-password")
+
+def setQ2Qpassword(password):
+    """
+    Not used.
+    """
+    uconfig().set("transport.transport-q2q.transport-q2q-password", password)
+    uconfig().update()
+
+def getQ2Quserathost():
+    """
+    Not used.
+    """
+    return getQ2Qusername()+'@'+getQ2Qhost()
+
+def setQ2Quserathost(userAThost):
+    """
+    Not used.
+    """
+    username, host = userAThost.split('@')
+    setQ2Qhost(host)
+    setQ2Qusername(username)
+
+def enableQ2Q(enable=None):
+    """
+    Not used.
+    """
+    if enable is None:
+        return uconfig('transport.transport-q2q.transport-q2q-enable').lower() == 'true'
+    uconfig().set('transport.transport-q2q.transport-q2q-enable', str(enable))
+    uconfig().update()
+
+def getHTTPPort():
+    """
+    Not used, transport_http is turned off.
+    """
+    return uconfig('transport.transport-http.transport-http-server-port')
+
+def setHTTPPort(port):
+    """
+    Not used.
+    """
+    uconfig().set("transport.transport-http.transport-http-port", str(port))
+    uconfig().update()
+
+def getHTTPDelay():
+    """
+    Not used.
+    """
+    return dhnmath.toInt(uconfig('transport.transport-http.transport-http-ping-timeout'), DefaultHTTPDelay())
+
+def enableHTTP(enable=None):
+    """
+    Not used.
+    """
+    if enable is None:
+        return uconfig('transport.transport-http.transport-http-enable').lower() == 'true'
+    uconfig().set('transport.transport-http.transport-http-enable', str(enable))
+    uconfig().update()
+
+def enableHTTPServer(enable=None):
+    """
+    Not used.
+    """
+    if enable is None:
+        return uconfig('transport.transport-http.transport-http-server-enable').lower() == 'true'
+    uconfig().set('transport.transport-http.transport-http-server-enable', str(enable))
+    uconfig().update()
+
 def SendTimeOutEmail():
+    """
+    Not used.
+    """
     return uconfig("other.emailSendTimeout")
 
 def DefaultReceiveTimeOutEmail():
+    """
+    Not used.
+    """
     return 120                # seconds receive timeout for email
 
 def DefaultHTTPDelay():
+    """
+    Not used.
+    """
     return 5
 
 def ReceiveTimeOutEmail():
+    """
+    Not used.
+    """
     return uconfig("other.emailReceiveTimeout")
 
 def EmailPollingTime():
+    """
+    Not used.
+    """
     return 30
 
 def getEmailAddress():
+    """
+    Not used.
+    """
     return uconfig('transport.transport-email.transport-email-address')
 
 def getPOPHost():
+    """
+    Not used.
+    """
     return uconfig('transport.transport-email.transport-email-pop-host')
 
 def getPOPPort():
+    """
+    Not used.
+    """
     return uconfig('transport.transport-email.transport-email-pop-port')
 
 def getPOPUser():
+    """
+    Not used.
+    """
     return uconfig('transport.transport-email.transport-email-pop-username')
 
 def getPOPPass():
+    """
+    Not used.
+    """
     return uconfig('transport.transport-email.transport-email-pop-password')
 
 def getPOPSSL():
+    """
+    Not used.
+    """
     return uconfig('transport.transport-email.transport-email-pop-ssl')
 
 def getSMTPHost():
+    """
+    Not used.
+    """
     return uconfig('transport.transport-email.transport-email-smtp-host')
 
 def getSMTPPort():
+    """
+    Not used.
+    """
     return uconfig('transport.transport-email.transport-email-smtp-port')
 
 def getSMTPUser():
+    """
+    Not used.
+    """
     return uconfig('transport.transport-email.transport-email-smtp-username')
 
 def getSMTPPass():
+    """
+    Not used.
+    """
     return uconfig('transport.transport-email.transport-email-smtp-password')
 
 def getSMTPSSL():
+    """
+    Not used.
+    """
     return uconfig('transport.transport-email.transport-email-smtp-ssl')
 
 def getSMTPNeedLogin():
+    """
+    Not used.
+    """
     return uconfig('transport.transport-email.transport-email-smtp-need-login').lower() == 'true'
 
 def enableEMAIL(enable=None):
+    """
+    Not used.
+    """
     if enable is None:
         return uconfig('transport.transport-email.transport-email-enable').lower() == 'true'
     uconfig().set('transport.transport-email.transport-email-enable', str(enable))
     uconfig().update()
 
 def enableSKYPE(enable=None):
+    """
+    Not used.
+    """
     if enable is None:
         return uconfig('transport.transport-skype.transport-skype-enable').lower() == 'true'
     uconfig().set('transport.transport-skype.transport-skype-enable', str(enable))
     uconfig().update()
 
 def enableTransport(proto, enable=None):
+    """
+    Return a current state of given transport or set set a new state.
+    """
     key = 'transport.transport-%s.transport-%s-enable' % (proto, proto)
     if uconfig(key) is None:
         return False
@@ -1027,11 +1719,17 @@ def enableTransport(proto, enable=None):
     uconfig().update()
 
 def transportIsEnabled(proto):
+    """
+    Alias for `enableTransport()`.
+    """
 #    if proto == 'http':
 #        return enableHTTPServer() or enableHTTP()
     return enableTransport(proto)
 
 def transportIsInstalled(proto):
+    """
+    This should return True if given transport have been configured and all needed config info is available.
+    """
 #    if proto == 'q2q':
 #        return getQ2Qusername().strip() != '' and getQ2Qhost().strip() != ''
 #    if proto == 'email':
@@ -1041,71 +1739,97 @@ def transportIsInstalled(proto):
     return True
 
 def transportReceivingIsEnabled(proto):
+    """
+    Return True if receiving over given transport is switched on. 
+    """
     key = 'transport.transport-%s.transport-%s-receiving-enable' % (proto, proto)
     if uconfig(key) is None:
         return False
     return uconfig(key).lower() == 'true'
 
 def transportSendingIsEnabled(proto):
+    """
+    Return True if sending over given transport is switched on. 
+    """
     key = 'transport.transport-%s.transport-%s-sending-enable' % (proto, proto)
     if uconfig(key) is None:
         return False
     return uconfig(key).lower() == 'true'
 
-#debug level info
-def getDebugLevelStr(): # this is just for checking if it is set, the int() would throw an error
-#    return uconfig("other.DebugLevel")
+def getDebugLevelStr(): 
+    """
+    This is just for checking if it is set, the int() would throw an error.
+    """
     return uconfig("logs.debug-level")
 
 def getDebugLevel():
+    """
+    Return current debug level.
+    """
     try:
-#        res = int(uconfig("other.DebugLevel"))
         res = int(getDebugLevelStr())
     except:
         res = dhnio.DebugLevel
     return res
 
 def setDebugLevel(level):
+    """
+    Set debug level.
+    """
     uconfig().set("logs.debug-level", str(level))
     uconfig().update()
 
 def enableWebStream(enable=None):
+    """
+    Get current state or enable/disable using of HTTP server to print logs,
+    need to restart DHN to take place changes.
+    """
     if enable is None:
         return uconfig('logs.stream-enable').lower() == 'true'
     uconfig().set('logs.stream-enable', str(enable))
     uconfig().update()
 
 def enableWebTraffic(enable=None):
+    """
+    Get current state or enable/disable using of HTTP server to print packets traffic, 
+    need to restart DHN to take place changes.
+    """
     if enable is None:
         return uconfig('logs.traffic-enable').lower() == 'true'
     uconfig().set('logs.traffic-enable', str(enable))
     uconfig().update()
 
 def getWebStreamPort():
+    """
+    Get port number of HTTP server to print logs.
+    """
     try:
         return int(uconfig('logs.stream-port'))
     except:
         return DefaultWebLogPort()
 
 def getWebTrafficPort():
+    """
+    Get port number of HTTP server to print packets traffic.
+    """
     try:
         return int(uconfig('logs.traffic-port'))
     except:
         return DefaultWebTrafficPort()
     
 def enableMemoryProfile(enable=None):
+    """
+    Get current state or enable/disable using of HTTP server to momory profiling.
+    """
     if enable is None:
         return uconfig('logs.memprofile-enable').lower() == 'true'
     uconfig().set('logs.memprofile-enable', str(enable))
     uconfig().update()
 
-def getDozerStr():
-    return uconfig('other.Dozer')
-
-def getDoBackupMonitor():
-    return uconfig('other.DoBackupMonitor')
-
 def getECC():
+    """
+    Get ecc map name from current suppliers number. 
+    """
     snum = getCentralNumSuppliers()
     if snum < 0:
         return DefaultEccMapName()
@@ -1116,45 +1840,82 @@ def getECC():
         return DefaultEccMapName()
 
 def getECCSuppliersNumbers():
+    """
+    List of available suppliers numbers.
+    """
     return [2, 4, 7, 13]
     # return eccmap.SuppliersNumbers()
 
 def getCentralNumSuppliers():
+    """
+    Get suppliers number from user settings.
+    """
     try:
         return int(uconfig('central-settings.desired-suppliers'))
     except:
         return -1
 
 def getCentralMegabytesNeeded():
+    """
+    Get needed space in megabytes from user settings.
+    """
     return uconfig('central-settings.needed-megabytes')
 
 def getCentralMegabytesDonated():
+    """
+    Get donated space in megabytes from user settings.
+    """
     return uconfig('central-settings.shared-megabytes')
 
 def getEmergencyEmail():
+    """
+    Get a user email address from settings. 
+    User can set that to be able to receive email notification in case of some troubles with his backups.
+    """
     return uconfig('emergency.emergency-email')
 
 def getEmergencyPhone():
+    """
+    Get a user phone number from settings. 
+    """
     return uconfig('emergency.emergency-phone')
 
 def getEmergencyFax():
+    """
+    Get a user fax number from settings. 
+    """
     return uconfig('emergency.emergency-fax')
 
 def getEmergencyOther():
+    """
+    Get a other address info from settings. 
+    """
     return uconfig('emergency.emergency-text')
 
 def getEmergency(method):
+    """
+    Get a given user emergensy method from settings. 
+    """
     if method not in getEmergencyMethods():
         return ''
     return uconfig('emergency.emergency-' + method)
 
 def getEmergencyFirstMethod():
+    """
+    Get a first method to use when need to contact with user. 
+    """
     return uconfig('emergency.emergency-first')
 
 def getEmergencySecondMethod():
+    """
+    Get a second method to use when need to contact with user. 
+    """
     return uconfig('emergency.emergency-second')
 
 def getEmergencyMethods():
+    """
+    Return a list of available methods to contact with user.
+    """
     return (
         'email',
         'phone',
@@ -1162,9 +1923,15 @@ def getEmergencyMethods():
         'other',)
 
 def getUpdatesMode():
+    """
+    User can set different modes to update the DHN software.
+    """
     return uconfig('updates.updates-mode')
 
 def getUpdatesModeValues():
+    """
+    List of available update modes.
+    """
     return  (
         'install automatically',
 #        'ask before install',
@@ -1172,43 +1939,77 @@ def getUpdatesModeValues():
         'turn off updates', )
 
 def getUpdatesSheduleData():
+    """
+    Return update schedule from settings.
+    """
     return uconfig('updates.updates-shedule')
 
 def setUpdatesSheduleData(raw_shedule):
+    """
+    Set update schedule in the settings. 
+    """
     uconfig().set('updates.updates-shedule', raw_shedule)
     uconfig().update()
 
 def getGeneralBackupsToKeep():
+    """
+    Return a number of copies to keep for every backed up data.
+    The oldest copies (over that amount) will be removed from data base and remote suppliers. 
+    """
     try:
         return int(uconfig('general.general-backups'))
     except:
         return 2
 
 def getGeneralLocalBackups():
+    """
+    Return True if user wish to keep local backups.
+    """
     return uconfig('general.general-local-backups-enable').lower() == 'true'
 
 def getGeneralWaitSuppliers():
+    """
+    Return True if user want to be sure that suppliers are reliable enough before removing the local backups. 
+    """
     return uconfig('general.general-wait-suppliers-enable').lower() == 'true'
 
 def getGeneralAutorun():
+    """
+    Return True if user want to start DHN at system start up.
+    """
     return uconfig('general.general-autorun').lower() == 'true'
 
 def getGeneralDisplayMode():
+    """
+    Get current GUI display mode from settings. 
+    """
     return uconfig('general.general-display-mode')
 
 def getGeneralDisplayModeValues():
+    """
+    List available display modes.
+    """
     return ('iconify window', 'normal window', 'maximized window',)
 
 ##def getGeneralShowProgress():
 ##    return uconfig('general.general-show-progress').lower() == 'true'
 
 def getGeneralDesktopShortcut():
+    """
+    Not used.
+    """
     return uconfig('general.general-desktop-shortcut').lower() == 'true'
 
 def getGeneralStartMenuShortcut():
+    """
+    Not used.
+    """
     return uconfig('general.general-start-menu-shortcut').lower() == 'true'
 
 def getBackupBlockSize():
+    """
+    Get backup block size from settings.
+    """
     global _BackupBlockSize
     if _BackupBlockSize is None:
         try:
@@ -1218,6 +2019,9 @@ def getBackupBlockSize():
     return _BackupBlockSize
 
 def getBackupMaxBlockSize():
+    """
+    Get the maximum backup block size from settings.
+    """
     global _BackupMaxBlockSize
     if _BackupMaxBlockSize is None:
         try:
@@ -1227,66 +2031,112 @@ def getBackupMaxBlockSize():
     return _BackupMaxBlockSize
 
 def setBackupBlockSize(block_size):
+    """
+    Set current backup block size in the memory to have fast access.
+    """
     global _BackupBlockSize
     _BackupBlockSize = int(block_size)
 
 def setBackupMaxBlockSize(block_size):
+    """
+    Set current maximum backup block size in the memory to have fast access.
+    """
     global _BackupMaxBlockSize
     _BackupMaxBlockSize = int(block_size)
      
 def getPrivateKeySize():
+    """
+    Return Private Key size from settings, but typically Private Key is generated only once during install stage.
+    """
     try:
         return int(uconfig('backup.private-key-size'))
     except:
         return DefaultPrivateKeySize()
     
 def setPrivateKeySize(pksize):
+    """
+    Set Private Key size in the settings.
+    """
     uconfig().set('backup.private-key-size', str(pksize))
     uconfig().update()
      
-def getSystemUserDataPathList():
-    return uconfig().get_childs('system.system-user-data-paths')
-
 def enableUPNP(enable=None):
+    """
+    Return True if user want to try to config his router to config port forwarding automatically.
+    If `enable` is not None - rewrite current value in the settings.
+    """
     if enable is None:
         return uconfig('other.upnp-enabled').lower() == 'true'
     uconfig().set('other.upnp-enabled', str(enable))
     uconfig().update()
 
 def getUPNPatStartup():
+    """
+    User have an option to check UPNP port forwarding every time DHN software starts up.
+    But this slow down the start up process.
+    """
     return uconfig('other.upnp-at-startup').lower() == 'true'
 
 def setUPNPatStartup(enable):
+    """
+    Enable or disable checking UPNP devices at start up.
+    """
     uconfig().set('other.upnp-at-startup', str(enable))
     uconfig().update()
 
 def isValidECC(ecc):
+    """
+    Return True if `ecc` is a correct ecc map name.
+    """
     if ecc in eccmap.EccMapNames():
         return True
     else:
         return False
 
 def getBitCoinServerHost():
+    """
+    Get a bitcoin server host name from settings. 
+    """
     return uconfig('other.bitcoin.bitcoin-host')
 
 def getBitCoinServerPort():
+    """
+    Get a bitcoin server port number from settings. 
+    """
     return uconfig('other.bitcoin.bitcoin-port')
 
 def getBitCoinServerUserName():
+    """
+    Get a bitcoin server user name from settings. 
+    """
     return uconfig('other.bitcoin.bitcoin-username')
 
 def getBitCoinServerPassword():
+    """
+    Get a bitcoin server user password from settings. 
+    """
     return uconfig('other.bitcoin.bitcoin-password')
 
 def getBitCoinServerIsLocal():
+    """
+    Get a bitcoin server mode from settings: local or remote server. 
+    """
     return uconfig('other.bitcoin.bitcoin-server-is-local').lower() == 'true' 
 
 def getBitCoinServerConfigFilename():
+    """
+    Get a bitcoin server config file name from settings. 
+    """
     return uconfig('other.bitcoin.bitcoin-config-filename')
 
-#---INITIALIZE BASE DIR----------------------------------------------------------------------------
+#------------------------------------------------------------------------------ 
+#--- INITIALIZE BASE DIR ----------------------------------------------------------------------------
 
 def RenameBaseDir(newdir):
+    """
+    The idea was to be able to move DataHaven.NET data folder to another place if user want that.
+    Not used.
+    """
     global _BaseDirPath
     olddir = _BaseDirPath
     try:
@@ -1312,6 +2162,10 @@ def RenameBaseDir(newdir):
     return True
 
 def _initBaseDir(base_dir=None):
+    """
+    Do some validation and create needed data folders if they are not exist yet.
+    You can specify another location for data files.
+    """
     global _BaseDirPath
     
     # if we already know the place - we are done
@@ -1390,16 +2244,22 @@ def _initBaseDir(base_dir=None):
             dhnio._dirs_make(_BaseDirPath)
         return
 
-#---BE SURE USER SETTINGS IS VALID--------------------------------------------------------------------------- 
+#------------------------------------------------------------------------------ 
+#--- USER SETTINGS VALIDATION --------------------------------------------------------------------------- 
 
 def _checkMetaDataDirectory():
-    # check that the metadata directory exists
+    """
+    Check that the metadata directory exists.
+    """
     if not os.path.exists(MetaDataDir()): 
         dhnio.Dprint(8, 'settings.init want to create metadata folder: ' + MetaDataDir())
         #dhnio._dirs_make(MetaDataDir())
         os.makedirs(MetaDataDir())
 
 def _checkSettings():
+    """
+    Validate some most important user settings.
+    """
     if getCentralNumSuppliers() < 0:
         uconfig().set("central-settings.desired-suppliers", str(DefaultDesiredSuppliers()))
 
@@ -1418,11 +2278,11 @@ def _checkSettings():
     if getDebugLevelStr() == "":
         uconfig().set("logs.debug-level", str(defaultDebugLevel()))
 
-    if SendTimeOutEmail() == "":
-        uconfig().set("other.emailSendTimeout", str(DefaultSendTimeOutEmail()))
+#    if SendTimeOutEmail() == "":
+#        uconfig().set("other.emailSendTimeout", str(DefaultSendTimeOutEmail()))
 
-    if ReceiveTimeOutEmail() == "":
-        uconfig().set("other.emailReceiveTimeout", str(DefaultReceiveTimeOutEmail()))
+#    if ReceiveTimeOutEmail() == "":
+#        uconfig().set("other.emailReceiveTimeout", str(DefaultReceiveTimeOutEmail()))
 
     if getTCPPort() == "":
         uconfig().set("transport.transport-tcp.transport-tcp-port", str(DefaultTCPPort()))
@@ -1430,11 +2290,11 @@ def _checkSettings():
     if getUDPPort() == "":
         uconfig().set("transport.transport-udp.transport-udp-port", str(DefaultUDPPort()))
 
-    if getSSHPort() == "":
-        uconfig().set("transport.transport-ssh.transport-ssh-port", str(DefaultSSHPort()))
+#    if getSSHPort() == "":
+#        uconfig().set("transport.transport-ssh.transport-ssh-port", str(DefaultSSHPort()))
 
-    if getHTTPPort() == "":
-        uconfig().set("transport.transport-http.transport-http-port", str(DefaultHTTPPort()))
+#    if getHTTPPort() == "":
+#        uconfig().set("transport.transport-http.transport-http-port", str(DefaultHTTPPort()))
 
     if getUpdatesMode().strip() not in getUpdatesModeValues():
         uconfig().set('updates.updates-mode', getUpdatesModeValues()[0])
@@ -1457,6 +2317,9 @@ def _checkSettings():
 
 
 def _checkStaticDirectories():
+    """
+    Check existance of static data folders.
+    """
 #    # check that the base directory exists
 #    if not os.path.isdir(BaseDir()):
 #        dhnio.Dprint(8, 'settings.init want to create folder: ' + BaseDir())
@@ -1498,6 +2361,9 @@ def _checkStaticDirectories():
 
 
 def _checkCustomDirectories():
+    """
+    Check existance of user configurable folders.
+    """
     if getCustomersFilesDir() == '':
         uconfig().set('folder.folder-customers', os.path.join(BaseDir(), "customers"))
     if not os.path.exists(getCustomersFilesDir()):
@@ -1505,37 +2371,25 @@ def _checkCustomDirectories():
         os.makedirs(getCustomersFilesDir())
 
     if getLocalBackupsDir() == '':
-        uconfig().set('folder.folder-backups', os.path.join(BaseDir(), "backups"))
+        uconfig().set('folder.folder-backups', BackupsDBDir())
     if not os.path.exists(getLocalBackupsDir()):
         dhnio.Dprint(6, 'settings.init want to create folder: ' + getLocalBackupsDir())
         os.makedirs(getLocalBackupsDir())
 
     if getMessagesDir() == '':
-        uconfig().set('folder.folder-messages', os.path.join(BaseDir(), 'messages'))
+        uconfig().set('folder.folder-messages', MessagesDir())
     if not os.path.exists(getMessagesDir()):
         dhnio.Dprint(6, 'settings.init want to create folder: ' + getMessagesDir())
         os.makedirs(getMessagesDir())
 
     if getReceiptsDir() == '':
-        uconfig().set('folder.folder-receipts', os.path.join(BaseDir(), 'receipts'))
+        uconfig().set('folder.folder-receipts', ReceiptsDir())
     if not os.path.exists(getReceiptsDir()):
         dhnio.Dprint(6, 'settings.init want to create folder: ' + getReceiptsDir())
         os.makedirs(getReceiptsDir())
 
     if getRestoreDir() == '':
         uconfig().set('folder.folder-restore', RestoreDir())
-
-#---INIT----------------------------------------------------------------------------
-
-def _init(base_dir=None):
-    dhnio.Dprint(4, 'settings._init')
-    _initBaseDir(base_dir)
-    dhnio.Dprint(2, 'settings._init data location: ' + BaseDir())
-    _checkMetaDataDirectory()
-    uconfig()
-    _checkStaticDirectories()
-    _checkSettings()
-    _checkCustomDirectories()
 
 #-------------------------------------------------------------------------------
 

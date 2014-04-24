@@ -7,7 +7,12 @@
 #      http://datahaven.net/terms_of_use.html
 #    All rights reserved.
 #
-#
+
+"""
+The code here is intended to operate with scheduled events. 
+User should be able to set a schedule to run backups at given moments.
+At the moment all this code is disabled.
+"""
 
 import os
 import sys
@@ -40,6 +45,9 @@ all_labels = {
     'c': 'continuously',}
 
 class Schedule:
+    """
+    
+    """
     types = all_types
     labels = all_labels
     

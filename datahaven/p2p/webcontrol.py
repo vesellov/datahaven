@@ -7546,12 +7546,12 @@ class SettingsTreeNode(Page):
             except:
                 dhnio.Dprint(1, 'webcontrol.SettingsTreeNode.modified ERROR wrong value!')
 
-        if self.path == 'general.general-autorun':
-            if dhnio.isFrozen() and dhnio.Windows():
-                if settings.getGeneralAutorun():
-                    misc.SetAutorunWindows()
-                else:
-                    misc.ClearAutorunWindows()
+#        if self.path == 'general.general-autorun':
+#            if dhnio.isFrozen() and dhnio.Windows():
+#                if settings.getGeneralAutorun():
+#                    misc.SetAutorunWindows()
+#                else:
+#                    misc.ClearAutorunWindows()
                     
 #        if self.path == 'folder.folder-customers':
 #            if old_value is not None:

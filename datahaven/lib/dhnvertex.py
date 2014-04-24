@@ -7,6 +7,17 @@
 #    All rights reserved.
 #
 
+"""
+Here is my experiments with Q2Q protocol, also called Vertex, created by DivMod.org.
+That project was dead for long, but it works.
+Really it can connect people behind NAT.
+This is anonymous: users will have an IDs like: veselin@q2q01.datahaven.net or alice@public-q2q.org.
+IP address is not published anywhere.
+The protocol is very nice, I think we can use that code, but need a lot to maintain.
+I have a lot ideas, let's decide.
+At the moment this is turned off completely.
+"""
+
 import os
 import sys
 import struct
@@ -37,8 +48,11 @@ from twisted.protocols.basic import FileSender as fsdr
 DelayedCall.debug = False
 
 
-import vertex.q2qclient as q2qclient
-import vertex.q2q as q2q
+try:
+    import vertex.q2qclient as q2qclient
+    import vertex.q2q as q2q
+except:
+    pass
 
 #------------------------------------------------------------------------------
 

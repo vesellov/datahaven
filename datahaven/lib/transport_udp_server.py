@@ -9,6 +9,12 @@
 #
 #
 
+"""
+This is a part of transport_udp stuff.
+Handle situations when that machine have opened IP and accept UDP packets from anyone.
+See `lib.transport_udp` for more details.
+"""
+
 import os
 import sys
 import time

@@ -9,6 +9,10 @@
 #
 #
 
+"""
+A useful code to monitor program packets traffic in the Web browser using local HTML server. 
+"""
+
 import sys
 
 try:

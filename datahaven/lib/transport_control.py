@@ -7,27 +7,41 @@
 #      http://datahaven.net/terms_of_use.html
 #    All rights reserved.
 #
-# outbox - going out to rest of world - have a packet object:
-#   We keep trying methods listed for the identity we want to send to, till one gets an ACK.
-#   The ACK might come back in a different way and that is fine.
-#   We have a queue of packets to send for each contact, but only send one at a time each
-#
-# inbox - in from rest of world - input is a filename:
-#   sort of the firewall point.  We try to stop garbage as much as possible.
-#   We also want to keep track of recent bandwidth so others can decide which dhnpackets
-#   would be easiest to get.
-#
-# The  transport_tcp.py  and transport_ssh.py modules are the essential ones.
-# The email and q2q are not so trusted.
-#
-# On startup we have to start any transport receive protocols that are listed in our identity
-#   on the right ports.
-#
-#  PREPRO - seems we are not removing temprorary files when we are done with them
-#
-# We can have a list of who wants what dhnpackets.
-# In particular, we can have dhnblocks
-# that say any packet with their number on it.
+"""
+The core module.
+
+Manage packets transfer across the network.
+
+outbox - going out to rest of world - have a packet object:
+    We keep trying methods listed for the identity we want to send to, till one gets an ACK.
+    The ACK might come back in a different way and that is fine.
+    We have a queue of packets to send for each contact, but only send one at a time each.
+
+inbox - in from rest of world - input is a filename:
+    Sort of the firewall point.  We try to stop garbage as much as possible.
+    We also want to keep track of recent bandwidth so others can decide which dhnpackets
+    would be easiest to get.
+
+The  transport_tcp.py  and transport_ssh.py modules are the essential ones.
+The email and q2q are not so trusted.
+
+On startup we have to start any transport receive protocols that are listed in our identity
+on the right ports.
+
+We can have a list of who wants what dhnpackets.
+In particular, we can have dhnblocks that say any packet with their number on it.
+
+PREPRO
+    I think we can remove sending queue now, 
+    any particular transport must have own queue to deal with multiple transfers.
+    The code in `p2p.io_throttle` is smart enough and do not send too many packets at once.
+    I am also going to make all transports as a plug-ins, so other developers can write own transports.
+    This way we can join different p2p networks and DHN will work on top of them.
+
+TODO: 
+    This module ( and other transport_*.py files ) will be moved to the datahaven/transport/ folder 
+    and will have many changes. I am going to do that ASAP, so doc strings is coming soon.
+"""
 
 
 
@@ -177,8 +191,11 @@ _BlackIPs = {}
 
 #------------------------------------------------------------------------------
 
-# init is called on startup
 def init(init_callback=None, init_contacts=None):
+    """
+    This is called on startup.
+    Start all available transports to be able to receive files over particular protocols. 
+    """
     global _InitDone
     global _TransportEmailEnable
     global _TransportQ2QEnable
@@ -423,11 +440,19 @@ def init(init_callback=None, init_contacts=None):
 #------------------------------------------------------------------------------
 
 def AddInboxCallback(callback):
+    """
+    You can add a callback to receive incoming dhnpackets.
+    Callback will be called with such arguments: 
+        (newpacket, proto, host).
+    """
     global _InboxPacketCallbacksList
     if callback not in _InboxPacketCallbacksList:
         _InboxPacketCallbacksList.append(callback)
 
 def AddOutboxCallback(callback):
+    """
+    You can add a callback to be notified when `outbox()` is called.
+    """
     global _OutboxPacketCallbacksList
     if callback not in _OutboxPacketCallbacksList:
         _OutboxPacketCallbacksList.append(callback)
@@ -742,20 +767,22 @@ def EraseMyProtosStates(idurl):
     _MyProtos.pop(idurl, None)
 
 #------------------------------------------------------------------------------
-# 1) The protocol modules write to temporary files and gives us that filename
-# 2) We unserialize
-# 3) We check that it is for us
-# 4) We check that it is from one of our contacts.
-# 5) We use dhnpacket.validate() to check signature and that number fields are numbers
-# 6) Any other sanity checks we can do and if anything funny we toss out the packet.
-# 7) Then change the filename to the dhnpacket.PackedID that it should be.
-#     and call the right function(s) for this new dhnpacket
-#     (dhnblock, scrubber, remotetester, customerservice, ...)
-#     to dispatch it to right place(s).
-#
-# We have to keep track of bandwidth to/from everyone, and make a report every 24 hours
-# which we send to DHN sometime in the 24 hours after that.
+
 def inbox(filename, proto='', host=''):
+    """
+    1) The protocol modules write to temporary files and gives us that filename
+    2) We unserialize
+    3) We check that it is for us
+    4) We check that it is from one of our contacts.
+    5) We use dhnpacket.validate() to check signature and that number fields are numbers
+    6) Any other sanity checks we can do and if anything funny we toss out the packet.
+    7) Then change the filename to the dhnpacket.PackedID that it should be.
+       and call the right function(s) for this new dhnpacket
+       (dhnblock, scrubber, remotetester, customerservice, ...)
+       to dispatch it to right place(s).
+    8) We have to keep track of bandwidth to/from everyone, and make a report every 24 hours
+       which we send to DHN sometime in the 24 hours after that.
+    """
     global _InboxPacketCallbacksList
     global _DoingShutdown
 

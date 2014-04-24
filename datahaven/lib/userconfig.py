@@ -6,20 +6,28 @@
 #      http://datahaven.net/terms_of_use.html
 #    All rights reserved.
 #
-#
-#
-#to add a single item in the user configuration:
-#1. edit userconfig.py: UserConfig.default_xml_src
-#   do not forget to add tag "label" and "info".
-#2. edit settings.py
-#   you can add access functions like getECC() or getCentralNumSuppliers()
-#3. edit guisettings.py if you wish user to be able to edit this item:
-#   add key pair to dictionary CSettings.items
-#   you can define your own Widget (for example: XMLTreeEMailSettingsNode or XMLTreeQ2QSettingsNode)
-#   if you are using ComboBox Widget (xmltreenodes.XMLTreeComboboxNode)
-#   you need to add his definition after line comment "#define combo boxes"
-#4. finally, you need to read this value using lib.settings and do something...
 
+"""
+Holds a user configurable options in the xml file:
+    [DataHaven.NET data dir]/metadata/userconfig.
+
+To add a single item in the user configuration:
+1. edit userconfig.py: UserConfig.default_xml_src
+   do not forget to add tag "label" and "info".
+2. edit settings.py
+   you can add access functions like getECC() or getCentralNumSuppliers()
+3. edit guisettings.py if you wish user to be able to edit this item:
+   add key pair to dictionary CSettings.items
+   you can define your own Widget (for example: XMLTreeEMailSettingsNode or XMLTreeQ2QSettingsNode)
+   if you are using ComboBox Widget (xmltreenodes.XMLTreeComboboxNode)
+   you need to add his definition after line comment "#define combo boxes"
+4. finally, you need to read this value using lib.settings and do something...
+
+TODO
+    I would change that code to use a same method that is used in CSpace project.
+    Every single option is kept in a single file on the disk.
+    This way we can read/write less data from/to HDD, because some options is updated pretty often.   
+"""
 
 import os
 import locale
@@ -177,6 +185,9 @@ LabelsDict = {
 #------------------------------------------------------------------------------ 
 
 class UserConfig:
+    """
+    A class to keep options in the memory and have fast access.
+    """
     default_xml_src = ur"""<settings>
  <general>
   <general-backups>
@@ -457,6 +468,9 @@ class UserConfig:
     default_order = []
 
     def __init__(self, filename):
+        """
+        Inititalize settings, `filename` is a to xml file were you wish to load/save settings.
+        """
         self.filename = filename
         if os.path.isfile(self.filename):
             self._read()
@@ -478,6 +492,10 @@ class UserConfig:
 
 
     def _parse(self, src):
+        """
+        Read XML content from `src` argument and return a DOM object.
+        Uses built-in `xml.dom.minidom.parseString` method.
+        """
         try:
             s = src.encode('utf-8')
             return minidom.parseString(s)
@@ -485,12 +503,18 @@ class UserConfig:
             return minidom.parseString(self.default_xml_src.encode('utf-8'))
 
     def _read(self):
+        """
+        Read XML content from specifind above file into memory.
+        """
         fin = open(self.filename, 'r')
         src = fin.read()
         fin.close()
         self.xmlsrc = src.decode(locale.getpreferredencoding())
 
     def _write(self):
+        """
+        Write XML content to the config file.
+        """
         src = self.xmlsrc.encode(locale.getpreferredencoding())
         try:
             fout = open(self.filename, 'w')
@@ -502,11 +526,16 @@ class UserConfig:
             pass
 
     def _create(self):
+        """
+        Create default settings.
+        """
         self.xmlsrc = self.default_xml_src
         self._write()
 
-    # check existing user-config and our template, add nodes if they are missing
     def _validate(self, remove=False):
+        """
+        Check existing userconfig and our template, add nodes if they are missing.
+        """
         changed = False
         for key in self.default_data.keys():
             if not self.data.has_key(key):
@@ -522,6 +551,13 @@ class UserConfig:
             self._write()
 
     def _load(self, data, node, path='', order=None):
+        """
+        Load options from DOM tree into dictionary.
+            :param data: a dictionary where all options will be loaded
+            :param node: DOM node where settings is saved
+            :param path: you can arrange loaded options to another 'sub folder'
+            :param order: a list of options names to be able to save the order of elements    
+        """
         d = get_text(node)
         if path != '':
             data[path] = d
@@ -548,6 +584,10 @@ class UserConfig:
                 self._load(data, subnode, name, order)
 
     def _from_data(self, parent, doc):
+        """
+        Reverse operiation to `_load` method.
+        Creates a DOM tree below `parent` node using `doc` implementation.
+        """
         for path in self.default_order:
             if path.strip() == '':
                 continue
@@ -564,6 +604,10 @@ class UserConfig:
             set_text(leafnode, value)
 
     def _make_xml(self):
+        """
+        A wrapper around `_from_data` method, return a tupple:
+            (string with XML content, root node of the DOM tree)
+        """
         impl = getDOMImplementation()
         doc = impl.createDocument(None, 'settings', None)
         rootnode = doc.documentElement
@@ -572,6 +616,9 @@ class UserConfig:
         return xmlsrc, rootnode
 
     def update(self, node=None):
+        """
+        Writes current options ( which is stored in memory ) to the disk.
+        """
         if node is None:
             self.xmlsrc = self.Serialize()
         else:
@@ -579,6 +626,9 @@ class UserConfig:
         self._write()
 
     def Serialize(self):
+        """
+        Generate an XML content from current settings.
+        """
         doc1 = self._parse(self.xmlsrc)
         self.default_order = []
         self._load(
@@ -588,6 +638,9 @@ class UserConfig:
         return self._make_xml()[0]
 
     def SerializeObject(self):
+        """
+        Generate a DOM tree from current settings.
+        """
         doc1 = self._parse(self.xmlsrc)
         self.default_order = []
         self._load(
@@ -597,6 +650,9 @@ class UserConfig:
         return self._make_xml()[1]
 
     def Unserialize(self, src):
+        """
+        Read settings from XML content. 
+        """
         doc = self._parse(src)
         node = doc.documentElement
         self.data.clear()
@@ -604,15 +660,25 @@ class UserConfig:
         self.xmlsrc = doc.toprettyxml("  ", "\n") # doubles if put spaces here
 
     def UnserializeObject(self, xml_object):
+        """
+        Read settings from DOM tree.
+        """
         self.data.clear()
         self._load(self.data, xml_object)
         self.xmlsrc = xml_object.toprettyxml("  ", "\n") # doubles if put spaces here
 
-    # use this when user needs to "reset to factory defaults"
     def reset(self):
+        """
+        Use this when user needs to "reset to factory defaults".
+        """
         self.xmlsrc = self.default_xml_src
 
     def get(self, key, request=None):
+        """
+        This is a most used method here.
+        Return a stored value for single option.
+        You can also get the label, or short description of that option by using `request` param.  
+        """
         if not request:
             return self.data.get(key, None)
         elif request=='all':
@@ -631,9 +697,15 @@ class UserConfig:
         return self.data.has_key(key)
 
     def has(self, key):
+        """
+        Return True if such option exist in the settings.
+        """
         return self.data.has_key(key)
 
     def set(self, key, value, request=None):
+        """
+        Set a value for given option.
+        """
         if request=='data':
             self.data[key] = value
         elif request=='label':
@@ -644,6 +716,9 @@ class UserConfig:
             self.data[key] = value
 
     def get_childs(self, key, request=None):
+        """
+        Return a sub items of given option in the dictionary.
+        """
         d = {}
         if request=='data':
             for k,v in self.data.items():
@@ -663,6 +738,9 @@ class UserConfig:
         return d
 
     def set_childs(self, key, childs_dict):
+        """
+        Set values for child items of given option.
+        """
         if not self.data.has_key(key):
             return
         for k,v in childs_dict.items():
@@ -671,15 +749,10 @@ class UserConfig:
                 _key = key+'.'+k
             self.data[_key] = v
 
-    def make_child_name(self, key, namebase):
-        i = 0
-        while True:
-            name = unicode(key+'.'+namebase+str(i))
-            if not self.data.has_key(name):
-                return name
-            i += 1
-
     def print_all(self):
+        """
+        Print all settings.
+        """
         for path in self.default_order:
             if path.strip() == '':
                 continue
@@ -690,6 +763,9 @@ class UserConfig:
             print value
 
     def print_all_html(self):
+        """
+        Print all settings in HTML format.
+        """
         src = ''
         for path in self.default_order:
             if path.strip() == '':
@@ -697,7 +773,7 @@ class UserConfig:
             value = self.data.get(path, '')
             label = self.labels.get(path, '')
             info = self.infos.get(path, '')
-            src += '<li><p><b>%s</b><br>\n' % label
+            src += '<li><p><b>%s</b>:  <b>[%s]</b><br>\n' % (label, value)
             src += '&nbsp;' * 4 + '\n'
             src += info + '\n'
             src += '</p></li>\n'''
@@ -708,12 +784,18 @@ class UserConfig:
 #-------------------------------------------------------------------------------
 
 def get_child(father,childname):
+    """
+    Return a child of `father` DOM element.
+    """
     for son in father.childNodes:
         if son.nodeName == childname:
             return son
     return None
 
 def get_text(xmlnode):
+    """
+    Return a text stored in DOM element.
+    """
     rc = u''
     for node in xmlnode.childNodes:
         if node.nodeType == node.TEXT_NODE:
@@ -721,6 +803,9 @@ def get_text(xmlnode):
     return rc.encode(locale.getpreferredencoding())
 
 def set_text(xmlnode, txt):
+    """
+    Set a text to DOM element.
+    """
     try:
         text = txt.decode(locale.getpreferredencoding())
     except:
@@ -739,114 +824,30 @@ def set_text(xmlnode, txt):
     xmlnode.appendChild(node)
 
 def get_label(xmlnode):
+    """
+    Get a label for DOM element.
+    """
     global LabelsDict
     return LabelsDict.get(xmlnode.tagName, xmlnode.tagName)
 
 def get_info(xmlnode):
+    """
+    Get a more detailed info about that DOM element.
+    """
     global InfosDict
     return InfosDict.get(xmlnode.tagName, '')
 
 #-------------------------------------------------------------------------------
 
 def main():
+    """
+    Read settings from 'userconfig' file and print in HTML form.
+    """
     import settings
     uc = UserConfig(settings.UserConfigFilename())
     uc.update()
-    # import pprint
-    # pprint.pprint(uc.data)
     print uc.print_all_html()
-
-##    for path in uc.default_order:
-##        if path.strip() == '':
-##            continue
-##        leafs = path.split('.')
-##        print path, len(leafs)
-
 
 if __name__ == "__main__":
     main()
 
-
-
-#  <transport-ssh>
-#   <transport-ssh-port>
-#    5022
-#   </transport-ssh-port>
-#   <transport-ssh-enable>
-#    False
-#   </transport-ssh-enable>
-#  </transport-ssh>
-#  <transport-q2q>
-#   <transport-q2q-host>
-#
-#   </transport-q2q-host>
-#   <transport-q2q-username>
-#
-#   </transport-q2q-username>
-#   <transport-q2q-password>
-#
-#   </transport-q2q-password>
-#   <transport-q2q-enable>
-#    True
-#   </transport-q2q-enable>
-#  </transport-q2q>
-#  <transport-email>
-#   <transport-email-address>
-#
-#   </transport-email-address>
-#   <transport-email-pop-host>
-#
-#   </transport-email-pop-host>
-#   <transport-email-pop-port>
-#
-#   </transport-email-pop-port>
-#   <transport-email-pop-username>
-#
-#   </transport-email-pop-username>
-#   <transport-email-pop-password>
-#
-#   </transport-email-pop-password>
-#   <transport-email-pop-ssl>
-#    False
-#   </transport-email-pop-ssl>
-#   <transport-email-smtp-host>
-#
-#   </transport-email-smtp-host>
-#   <transport-email-smtp-port>
-#
-#   </transport-email-smtp-port>
-#   <transport-email-smtp-username>
-#
-#   </transport-email-smtp-username>
-#   <transport-email-smtp-password>
-#
-#   </transport-email-smtp-password>
-#   <transport-email-smtp-need-login>
-#    False
-#   </transport-email-smtp-need-login>
-#   <transport-email-smtp-ssl>
-#    False
-#   </transport-email-smtp-ssl>
-#   <transport-email-enable>
-#    False
-#   </transport-email-enable>
-#  </transport-email>
-#  <transport-http>
-#   <transport-http-server-port>
-#    9786
-#   </transport-http-server-port>
-#   <transport-http-ping-timeout>
-#    5
-#   </transport-http-ping-timeout>
-#   <transport-http-enable>
-#    True
-#   </transport-http-enable>
-#   <transport-http-server-enable>
-#    True
-#   </transport-http-server-enable>
-#  </transport-http>
-#  <transport-skype>
-#   <transport-skype-enable>
-#    False
-#   </transport-skype-enable>
-#  </transport-skype>

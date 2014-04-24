@@ -8,6 +8,11 @@
 #
 #
 
+"""
+This is OS specific methods to read and check the local disks usage.
+Need to be sure user have enough free space on the disk and able to donate previously specified amount of space. 
+"""
+
 import os
 import time
 import glob
@@ -22,8 +27,12 @@ if dhnio.Windows():
 
 #------------------------------------------------------------------------------ 
 
-# return free space in bytes, total space in bytes
-def GetWinDriveSpace(drive): 
+def GetWinDriveSpace(drive):
+    """
+    For Windows.
+    Return a tuple (<free space in bytes>, <total space in bytes>) or (None, None).
+    Call system method `win32file.GetDiskFreeSpace`.
+    """ 
     try:
         sectorsPerCluster, bytesPerSector, numFreeClusters, totalNumClusters = win32file.GetDiskFreeSpace(drive + ":\\")
         sectorsPerCluster = long(sectorsPerCluster)
@@ -34,8 +43,12 @@ def GetWinDriveSpace(drive):
         return None, None
     return float(numFreeClusters * sectorsPerCluster * bytesPerSector), float(totalNumClusters * sectorsPerCluster * bytesPerSector)
 
-# return free space in bytes, total space in bytes
-def GetLinuxDriveSpace(path): 
+def GetLinuxDriveSpace(path):
+    """
+    For Linux.
+    Return a tuple (<free space in bytes>, <total space in bytes>) or (None, None).
+    Call system method `os.statvfs`.    
+    """ 
     try:
         s = os.statvfs(str(path))
         # free, total = s.f_bsize*(s.f_blocks-s.f_bavail), s.f_bsize * s.f_bavail 
@@ -50,6 +63,9 @@ def GetLinuxDriveSpace(path):
 #        return free, total
 
 def GetDriveSpace(path):
+    """
+    So this a sort of portable way to get the free HDD space in the system.
+    """
     if dhnio.Windows():
         drive = os.path.abspath(path)[0]
         if os.path.isdir(drive+':'):
@@ -62,6 +78,9 @@ def GetDriveSpace(path):
         return GetLinuxDriveSpace(path)
 
 def SumFileSizes(fileList):
+    """
+    Just iterate the input list and call `os.path.getsize` for every item, also calculate and return the total size.
+    """
     fileSizeTotal = 0
     for filename in fileList:
         try:
@@ -71,6 +90,11 @@ def SumFileSizes(fileList):
     return fileSizeTotal
 
 def GetOurTempFileSizeTotal(tempDirectory):
+    """
+    Not used right now.
+    Tried here to calculate our temporary files size.
+    Temp files was reorganized and so this must be rewritten. TODO.
+    """
     ourFileMasks = ['*-Data', '*-Parity', '*dhn*', '*.controloutbox', 'newblock-*', '*.backup']
     ourFileSizes = 0
     for mask in ourFileMasks:
@@ -78,7 +102,9 @@ def GetOurTempFileSizeTotal(tempDirectory):
     return ourFileSizes
 
 def OkToShareSpace(desiredSharedSpaceMB):
-    # make sure a user really has the space they claim they want to share
+    """
+    Make sure a user really has the space they claim they want to share.
+    """
     dataDir = settings.getCustomersFilesDir()
     dataDriveFreeSpace, dataDriveTotalSpace = GetDriveSpace(dataDir)
     if dataDriveFreeSpace is None:
@@ -90,11 +116,18 @@ def OkToShareSpace(desiredSharedSpaceMB):
         return True
     
 def GetDirectorySize(directoryPath):
+    """
+    Just calculates the folder size in megabytes using `dhnio.getDirectorySize`.
+    """
     return dhnio.getDirectorySize(directoryPath)/(1024*1024)
 
 #------------------------------------------------------------------------------ 
 
 def main():
+    """
+    This method is for tests.
+    Need to move all things here to unit tests. TODO.
+    """
     dataDir = settings.getCustomersFilesDir()
     tempDir = settings.TempDir()
     dataDriveFreeSpace = 0

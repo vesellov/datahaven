@@ -4,6 +4,6 @@
 #    All rights reserved.
 
 """
-Contains various functions related to the Client side code, a Central server, Identity server.
+Contains various functions related to the Client side code, a Central server, Identity server and other stuff.
 """
 

@@ -5,5 +5,6 @@
 #    All rights reserved.
 #
 
-#__all__ = []
-
+"""
+Contains modules to run DataHaven.NET Client code.
+"""

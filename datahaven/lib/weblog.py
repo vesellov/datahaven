@@ -1,5 +1,17 @@
 #!/usr/bin/python
 #weblog.py
+#
+#
+#    Copyright DataHaven.NET LTD. of Anguilla, 2006
+#    Use of this software constitutes acceptance of the Terms of Use
+#      http://datahaven.net/terms_of_use.html
+#    All rights reserved.
+#
+#
+
+"""
+A useful code to monitor program logs in the Web browser using local HTML server. 
+"""
 
 import sys
 import urllib

@@ -1,35 +1,36 @@
 #!/usr/bin/python
+#eccmap.py
 #
 #    Copyright DataHaven.NET LTD. of Anguilla, 2006
 #    Use of this software constitutes acceptance of the Terms of Use
 #      http://datahaven.net/terms_of_use.html
 #    All rights reserved.
 #
-#
-#  ECCMAP.PY
-#
-# This object holds one error correcting code map.
-# When creating an object we give a filename to load from.
-#
-# The spec says for each datablock which parity blocks XOR it.
-# As we read in each datablock we XOR all the parity blocks for it.
-# Probably best to read in all the datablocks at once, and do all
-# the parities one time.  If we did one datablock after another
-# the parity blocks would need to be active all the time.
-#
-# If we XOR integers, we have a byte order issue probably, though
-# maybe not since they all stay the same order, whatever that is.
-#
-# Some machines are 64-bit.  Would be fun to make use of that if
-# we have it.
-#
-# 2^1 => 3       ^ is XOR operator
-#
-# Parity packets have to be a little longer so they can hold
-# parities on signatures of datapackets.  So we can reconstruct
-# those signatures.
-#
-# Numbering is from 0 to 63 for range of 64
+
+"""
+This object holds one error correcting code map.
+When creating an object we give a filename to load from or a map name to load from memory.
+
+The spec says for each datablock which parity blocks XOR it.
+As we read in each datablock we XOR all the parity blocks for it.
+Probably best to read in all the datablocks at once, and do all
+the parities one time.  If we did one datablock after another
+the parity blocks would need to be active all the time.
+
+If we XOR integers, we have a byte order issue probably, though
+maybe not since they all stay the same order, whatever that is.
+
+Some machines are 64-bit. Would be fun to make use of that if we have it.
+
+    >>> 2^1  # ^ is XOR operator
+    3
+    
+Parity packets have to be a little longer so they can hold
+parities on signatures of datapackets.  
+So we can reconstruct those signatures.
+
+Numbering is from 0 to 63 for range of 64.
+"""
 
 import os
 import re
@@ -131,6 +132,11 @@ CurrentMap = None
 #------------------------------------------------------------------------------ 
 
 def init():
+    """
+    Firstly need to call that method, it will set the current map - always keep only one map in memory.
+    This module can be imported inside a thread - another map will be created in memory.
+    Should have no conflicts with main ecc map. Once the thread is closed - the new map will be destroyed.   
+    """
     global CurrentMap
     if CurrentMap is not None:
         del CurrentMap
@@ -138,6 +144,9 @@ def init():
     CurrentMap = eccmap(CurrentName())
     
 def shutdown():
+    """
+    This clear the current map from memory.
+    """
     global CurrentMap
     del CurrentMap
     CurrentMap = None
@@ -145,47 +154,78 @@ def shutdown():
 #------------------------------------------------------------------------------ 
 
 def DefaultName():
+    """
+    This is a wrapper for `settings.DefaultEccMapName`.
+    """
     return settings.DefaultEccMapName()
 
 def CurrentName():
+    """
+    Should return a ecc map name from current suppliers number - taken from user settings. 
+    """
     return settings.getECC()
 
 def Current():
+    """
+    Return current map stored in memory, if not yet created - call `init` method above.
+    """
     global CurrentMap
     if CurrentMap is None:
         init()
     return CurrentMap
 
 def SuppliersNumbers():
+    """
+    Return a list of valid suppliers numbers.
+    This is: [2, 4, 7, 13, 18, 26, 64]
+    """
     global __suppliers_numbers
     return __suppliers_numbers
 
 def EccMapNames():
+    """
+    Return a list of valid ecc names.
+    """
     global __eccmap_names
     return __eccmap_names
 
 def GetEccMapName(suppliers_number):
+    """
+    Return a ecc map name for given suppliers number or `DefaultName()`.
+    """
     global __suppliers2eccmap
-    return __suppliers2eccmap.get(suppliers_number, settings.DefaultEccMapName())
+    return __suppliers2eccmap.get(suppliers_number, DefaultName())
 
 def GetEccMapSuppliersNumber(eccmapname):
+    """
+    Reverse method, return a suppliers number for that map.
+    """
     global __eccmap2suppliers
     try:
-        return int(__eccmap2suppliers.get(eccmapname, settings.DefaultSuppliersNumber()))
+        return int(__eccmap2suppliers.get(eccmapname, settings.DefaultDesiredSuppliers()))
     except:
-        return settings.DefaultSuppliersNumber()
+        return settings.DefaultDesiredSuppliers()
 
 def GetEccMapData(name):
+    """
+    This return a matrix of that ecc map. You can see this is in the top of the file.
+    """
     global __eccmaps
     return __eccmaps.get(name, None)
 
 def GetCorrectableErrors(suppliers_number):
+    """
+    For every map we have different amount of "fixable" errors.
+    """
     global __correctable_errors
     return __correctable_errors.get(suppliers_number, 1)
 
 #------------------------------------------------------------------------------ 
 
 class eccmap:
+    """
+    A class to do many operations with ecc map. 
+    """
     def __init__ (self, filename='', suppliers_number=2):
         if filename != '':
             self.name = filename      # sometimes we will just want the name
@@ -213,17 +253,23 @@ class eccmap:
         return '%s' % (self.name)
 
     def NumSuppliers(self):
-        # dhnio.Dprint(4, 'eccmap.NumSuppliers ' + str(self.suppliers_number))
+        """
+        Return a number of suppliers for the map.
+        """
         return self.suppliers_number
 
     def DataNeeded(self):           
-        # How many good segments ensures we can fix all
+        """
+        How many good segments ensures we can fix all.
+        """
         return self.datasegments - self.CorrectableErrors
 
     def CalcCorrectableErrors(self, filename):  
-        # We can fix at least this many errors (probably more for big nums)
+        """
+        We can fix at least this many errors (probably more for big nums).
+        All our codes can handle at least one error.
+        """
         basename = os.path.basename(filename)
-        # all our codes can handle at least one error
         CE=1                                    
         if basename=="64x64":
             CE=10
@@ -242,6 +288,9 @@ class eccmap:
         return CE
 
     def from_memory(self, name):
+        """
+        Read the constants from memory and take needed matrix on hands.
+        """
         # dhnio.Dprint(6, "eccmap.from_memory with " + name)
         maxdata = 0
         maxparity = 0
@@ -267,6 +316,9 @@ class eccmap:
         # dhnio.Dprint(6, "   %s with parity=%s data=%s " % (name, self.paritysegments, self.datasegments))
 
     def loadfromfile(self, fname):
+        """
+        This is old method, I decide to move all constants into the Python code.
+        """
         # dhnio.Dprint(10, "eccmap.loadfromfile with " + fname)
         if os.path.exists(fname):
             filename = fname
@@ -295,6 +347,9 @@ class eccmap:
         # dhnio.Dprint(10, "eccmap.loadfromfile  %s  with parity=%s  data=%s " % (filename, self.paritysegments, self.datasegments))
 
     def convert(self):
+        """
+        This creates a backward matrix and remember it.
+        """
         for datanum in range(self.datasegments):
             self.DataToParity.append([])
         paritynum = 0
@@ -303,13 +358,19 @@ class eccmap:
                 self.DataToParity[datanum].append(paritynum)
             paritynum += 1
 
-    def nodes(self):                  # number of nodes/hosts/sites used for this map
+    def nodes(self):                  
+        """
+        Number of nodes/hosts/sites used for this map.
+        """
         if self.type == 0:            # 0 is data+parity on same nodes, 1 is different
             return self.datasegments
         else:
             return self.datasegments + self.paritysegments
 
     def check(self):
+        """
+        This is just to test I suppose.
+        """
         for emap in self.DataToParity:
             for parity in emap:
                 if parity > self.paritysegments:
@@ -321,7 +382,9 @@ class eccmap:
         return True
 
     def FixableNode(self, NodeMap):              
-        # case where each node has one parity and one data so same missing
+        """
+        Case where each node has one parity and one data so same missing.
+        """
         DataSegs=[0]*self.datasegments
         ParitySegs=[0]*self.datasegments
         if len(NodeMap) != self.datasegments:
@@ -331,10 +394,13 @@ class eccmap:
         for i in range(0, self.datasegments):
             DataSegs[i]=NodeMap[i]
             ParitySegs[i]=NodeMap[i]
-        return(self.Fixable(DataSegs, ParitySegs))
+        return (self.Fixable(DataSegs, ParitySegs))
 
     def Fixable(self, DataSegs, ParitySegs):         
-        # Lists are 1 for Data and Parity, lists are [0,1,1,1,0...] 0 is don't have 1 is have
+        """
+        Check is reconstruction is possible.
+        Lists are 1 for Data and Parity, lists are [0,1,1,1,0...] 0 is don't have 1 is have.
+        """
         stillMissing = 0
         for i in range(self.datasegments):
             if DataSegs[i] != 1:
@@ -360,7 +426,11 @@ class eccmap:
         AllFixed = stillMissing == 0                # If nothing else missing we are good
         return AllFixed
 
-    def CanMakeProgress(self, DataSegs, ParitySegs): # Lists are 1 for Data and Parity, lists are [0,1,1,1,0...] 0 is don't have 1 is have
+    def CanMakeProgress(self, DataSegs, ParitySegs): 
+        """
+        Another method to check if we can do some data reconstruction. 
+        Lists are 1 for Data and Parity, lists are [0,1,1,1,0...] 0 is don't have 1 is have.
+        """
         for paritynum in range(self.paritysegments): #  foreach parity
             if ParitySegs[paritynum] == 1:      # If parity is not missing (so we can use it)
                 Parity = self.ParityToData[paritynum]
@@ -382,10 +452,12 @@ class eccmap:
                     return True
         return False
 
-    # given a missing segment number (DataSegNum) and a list of available Data Segments and Parity Segments
-    # identify which Parity to use to rebuild the missing Data Segment, return the parity segment number and
-    # the map of data segments in that parity
     def GetDataFixPath(self, DataSegs, ParitySegs, DataSegNum):
+        """
+        Given a missing segment number (DataSegNum) and a list of available Data Segments and Parity Segments.
+        Identify which Parity to use to rebuild the missing Data Segment, return the parity segment number and
+        the map of data segments in that parity.
+        """
         #dhnio.Dprint(14, 'eccmap.GetDataFixPath %s %s %s' % (str(DataSegNum), str(DataSegs), str(ParitySegs)))
         bestParityNum = -1
         bestParityMap = []
@@ -409,7 +481,27 @@ class eccmap:
 
 #------------------------------------------------------------------------------ 
 
+def main():
+    """
+    Tests.
+    """
+    myecc = eccmap("ecc/4x4")
+    print myecc.ParityToData
+    print myecc.DataToParity
+    myecc.check()
+
+    print "Do some checks for rebuilding a block"
+    dataSegments = [1, 0, 1, 1]
+    paritySegments = [1, 1, 1, 0]
+    parityNum, parityMap = myecc.GetDataFixPath(dataSegments, paritySegments, 1)
+    print parityNum       # as of the writing, the best parity was 7
+    print parityMap
+    print myecc.Fixable(dataSegments, paritySegments)
+
 def main2():
+    """
+    Another tests.
+    """
     myecc = eccmap("ecc/64x64")
     print myecc.ParityToData
     print myecc.DataToParity
@@ -427,21 +519,7 @@ def main2():
     print parityNum       # should be 11
     print parityMap
 
-
-def main():
-    myecc = eccmap("ecc/4x4")
-    print myecc.ParityToData
-    print myecc.DataToParity
-    myecc.check()
-
-    print "Do some checks for rebuilding a block"
-    dataSegments = [1, 0, 1, 1]
-    paritySegments = [1, 1, 1, 0]
-    parityNum, parityMap = myecc.GetDataFixPath(dataSegments, paritySegments, 1)
-    print parityNum       # as of the writing, the best parity was 7
-    print parityMap
-    print myecc.Fixable(dataSegments, paritySegments)
-
+#------------------------------------------------------------------------------ 
 
 if __name__ == '__main__':
     main()

@@ -991,7 +991,7 @@ def DeleteLocalDir(basedir, pathID):
         return
     if not pathIsDir(path):
         raise Exception('Error, %s is not a directory' % path)
-    dhnio.rmdir_recursive(path)
+    dhnio.rmdir_recursive(path, ignore_errors=True)
     
 def DeleteLocalBackup(basedir, backupID):
     count_and_size = [0, 0,]
@@ -1007,7 +1007,7 @@ def DeleteLocalBackup(basedir, backupID):
             count_and_size[0] += 1
             count_and_size[1] += os.path.getsize(fullpath) 
         return True
-    dhnio.rmdir_recursive(backupDir, pre_callback=visitor)
+    dhnio.rmdir_recursive(backupDir, ignore_errors=True, pre_callback=visitor)
     return count_and_size[0], count_and_size[1]
 
 #------------------------------------------------------------------------------ 

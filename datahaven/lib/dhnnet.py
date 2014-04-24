@@ -7,8 +7,9 @@
 #      http://datahaven.net/terms_of_use.html
 #    All rights reserved.
 #
-#    some network routines
-# 
+"""
+Some network routines
+""" 
 
 import os
 import sys
@@ -61,23 +62,39 @@ _ProxySettings = {
 #------------------------------------------------------------------------------
 
 def init():
+    """
+    Just in case.
+    """
     pass
 
 def SetConnectionDoneCallbackFunc(f):
+    """
+    Here is a place to set a callback to catch events for ``successful`` network transfers. 
+    """
     global _ConnectionDoneCallbackFunc
     _ConnectionDoneCallbackFunc = f
     
 def SetConnectionFailedCallbackFunc(f):
+    """
+    Set a callback to catch events for ``failed`` network transfers or connections.
+    Later, DHN code will compare both counters to decide that connection to Internet is gone. 
+    """
     global _ConnectionFailedCallbackFunc
     _ConnectionFailedCallbackFunc = f
 
 def ConnectionDone(param=None, proto=None, info=None):
+    """
+    This method is called from different places to inform of ``successful`` network transfers, connections, requests. 
+    """
     global _ConnectionDoneCallbackFunc
     if _ConnectionDoneCallbackFunc is not None:
         _ConnectionDoneCallbackFunc(proto, info, param)
     return param
 
 def ConnectionFailed(param=None, proto=None, info=None):
+    """
+    This method is called to inform of ``failed`` network results. 
+    """
     global _ConnectionFailedCallbackFunc
     if _ConnectionFailedCallbackFunc is not None:
         _ConnectionFailedCallbackFunc(proto, info, param)
@@ -86,7 +103,9 @@ def ConnectionFailed(param=None, proto=None, info=None):
 #------------------------------------------------------------------------------ 
 
 def parseurl(url, defaultPort=None):
-    """Split the given URL into the scheme, host, port, and path."""
+    """
+    Split the given URL into the scheme, host, port, and path.
+    """
     url = url.strip()
     parsed = urlparse.urlparse(url)
     scheme = parsed[0]
@@ -110,6 +129,9 @@ def parseurl(url, defaultPort=None):
 #------------------------------------------------------------------------------ 
 
 def detect_proxy_settings():
+    """
+    Do some work and return dictionary with Proxy server settings for that machine.
+    """
     d = {
         'host':'',
         'port':'',
@@ -140,18 +162,30 @@ def detect_proxy_settings():
     return d
 
 def set_proxy_settings(settings_dict):
+    """
+    Remember proxy settings.
+    """
     global _ProxySettings
     _ProxySettings = settings_dict
 
 def get_proxy_settings():
+    """
+    Get current proxy settings. 
+    """
     global _ProxySettings
     return _ProxySettings
 
 def get_proxy_host():
+    """
+    Get current proxy host.
+    """
     global _ProxySettings
     return _ProxySettings.get('host', '')
 
 def get_proxy_port():
+    """
+    Get current proxy port number.
+    """
     global _ProxySettings
     try:
         return int(_ProxySettings.get('port', '8080'))
@@ -159,58 +193,50 @@ def get_proxy_port():
         return 8080
 
 def get_proxy_username():
+    """
+    Get current proxy username.
+    """
     global _ProxySettings
     return _ProxySettings.get('username', '')
 
 def get_proxy_password():
+    """
+    Get current proxy password.
+    """
     global _ProxySettings
     return _ProxySettings.get('password', '')
 
 def get_proxy_ssl():
+    """
+    Is this a secure proxy?
+    """
     global _ProxySettings
     return _ProxySettings.get('ssl', '')
 
 def proxy_is_on():
+    """
+    In most cases people do not use any proxy servers.
+    This is to check if user is using a proxy and we have the settings. 
+    """
     return get_proxy_host() != ''
-
-#-------------------------------------------------------------------------------
-
-class MyHTTPClientFactory(HTTPClientFactory):
-    def page(self, page):
-        if self.waiting:
-            self.waiting = 0
-            self.deferred.callback(page)
-
-    def noPage(self, reason):
-        if self.waiting:
-            self.waiting = 0
-            self.deferred.errback(reason)
-
-    def clientConnectionFailed(self, _, reason):
-        if self.waiting:
-            self.waiting = 0
-            self.deferred.errback(reason)
-
-
-def getPageTwistedOld(url):
-    global _UserAgentString
-    scheme, host, port, path = parseurl(url)
-    factory = MyHTTPClientFactory(url, agent=_UserAgentString)
-    reactor.connectTCP(host, port, factory)
-    return factory.deferred
 
 #------------------------------------------------------------------------------
 
 
 def downloadPageTwisted(url, filename):
+    """
+    A wrapper for twisted method `twisted.web.client.downloadPage`.
+    """
     global _UserAgentString
     return downloadPage(url, filename, agent=_UserAgentString)
 
 #-------------------------------------------------------------------------------
 
-#http://schwerkraft.elitedvb.net/plugins/scmcvs/cvsweb.php/enigma2-plugins/mediadownloader/src/HTTPProgressDownloader.py?rev=1.1;cvsroot=enigma2-plugins;only_with_tag=HEAD
 class HTTPProgressDownloader(HTTPDownloader):
-    """Download to a file and keep track of progress."""
+    """
+    Download to a file and keep track of progress.
+        http://schwerkraft.elitedvb.net/plugins/scmcvs/cvsweb.php/enigma2-plugins/mediadownloader/src/HTTPProgressDownloader.py?rev=1.1;cvsroot=enigma2-plugins;only_with_tag=HEAD
+    """
 
     def __init__(self, url, fileOrName, writeProgress = None, *args, **kwargs):
         HTTPDownloader.__init__(self, url, fileOrName, supportPartial=0, *args, **kwargs)
@@ -249,6 +275,9 @@ class HTTPProgressDownloader(HTTPDownloader):
 
 
 def downloadWithProgressTwisted(url, file, progress_func):
+    """
+    This method can keep track of the progress.
+    """
     global _UserAgentString
     scheme, host, port, path = parseurl(url)
     factory = HTTPProgressDownloader(url, file, progress_func, agent=_UserAgentString)
@@ -263,6 +292,9 @@ def downloadWithProgressTwisted(url, file, progress_func):
 
 
 def downloadSSLWithProgressTwisted(url, file, progress_func, privateKeyFileName, certificateFileName):
+    """
+    Can download from HTTPS sites.
+    """
     global _UserAgentString
     scheme, host, port, path = parseurl(url)
     factory = HTTPProgressDownloader(url, file, progress_func, agent=_UserAgentString)
@@ -295,6 +327,9 @@ class MyClientContextFactory(ssl.ClientContextFactory):
 
 
 def downloadSSL(url, fileOrName, progress_func, certificates_filenames):
+    """
+    Another method to download from HTTPS.
+    """
     global _UserAgentString
     scheme, host, port, path = parseurl(url)
     if not isinstance(certificates_filenames, types.ListType):
@@ -313,52 +348,15 @@ def downloadSSL(url, fileOrName, progress_func, certificates_filenames):
 
 #------------------------------------------------------------------------------
 
-class NoVerifyClientContextFactory:
-    isClient = 1
-    method = SSL.SSLv3_METHOD
-    def getContext(self):
-        def x(*args):
-            return True
-        ctx = SSL.Context(self.method)
-        #print dir(ctx)
-        ctx.set_verify(SSL.VERIFY_NONE,x)
-        return ctx
-
-def downloadSSL2(url, fileOrName, progress_func, certificates_filenames=[]):
-    global _UserAgentString
-    factory = HTTPDownloader(url, fileOrName, agent=_UserAgentString)
-
-    if proxy_is_on():
-        factory.path = url
-        # TODO
-        # need to check certificate too
-        contextFactory = MyClientContextFactory(certificates_filenames)
-        reactor.connectSSL(get_proxy_host(), get_proxy_port(), factory, contextFactory)
-
-    else:
-        scheme, host, port, path = parseurl(url)
-        if not isinstance(certificates_filenames, types.ListType):
-            certificates_filenames = [certificates_filenames, ]
-        cert_found = False
-        for cert in certificates_filenames:
-            if os.path.isfile(cert) and os.access(cert, os.R_OK):
-                cert_found = True
-                break
-        if not cert_found:
-            return fail('no one ssl certificate found')
-        contextFactory = MyClientContextFactory(certificates_filenames)
-        reactor.connectSSL(host, port, factory, contextFactory)
-
-    return factory.deferred
-
-#-------------------------------------------------------------------------------
-
 class ProxyClientFactory(client.HTTPClientFactory):
     def setURL(self, url):
         client.HTTPClientFactory.setURL(self, url)
         self.path = url
 
 def getPageTwisted(url, timeout=0):
+    """
+    A smart way to download pages from HTTP hosts. 
+    """
     global _UserAgentString
     if proxy_is_on():
         factory = ProxyClientFactory(url, agent=_UserAgentString, timeout=timeout)
@@ -375,6 +373,9 @@ def getPageTwisted(url, timeout=0):
 #------------------------------------------------------------------------------
 
 def downloadHTTP(url, fileOrName):
+    """
+    Another method to download from HTTP host.
+    """
     global _UserAgentString
     scheme, host, port, path = parseurl(url)
     factory = HTTPDownloader(url, fileOrName, agent=_UserAgentString)
@@ -388,6 +389,9 @@ def downloadHTTP(url, fileOrName):
 #-------------------------------------------------------------------------------
 
 def IpIsLocal(ip):
+    """
+    A set of "classic" patterns for local networks.  
+    """
     if ip == '':
         return True
     if ip == '0.0.0.0':
@@ -410,19 +414,15 @@ def IpIsLocal(ip):
 
 #-------------------------------------------------------------------------------
 
-def getLocalIpError():
-    import socket
-    addr = socket.gethostbyname(socket.gethostname())
-    if addr == "127.0.0.1" and os.name == 'posix':
-        import commands
-        output = commands.getoutput("/sbin/ifconfig")
-        #TODO parseaddress not done yet
-        addr = parseaddress(output)
-    return addr
-
-
-#http://ubuntuforums.org/showthread.php?t=1215042
-def getLocalIp(): # had this in p2p/stun.py
+def getLocalIp(): 
+    """
+    A stack of methods to get the local IP of that machine. Had this in p2p/stun.py.
+        http://ubuntuforums.org/showthread.php?t=1215042
+        1. Use the gethostname method
+        2. Use outside connection
+        3. Use OS specific command
+        4. Return 127.0.0.1 in unknown situation
+    """
     import socket
     # 1: Use the gethostname method
 
@@ -490,8 +490,9 @@ def getLocalIp(): # had this in p2p/stun.py
 #-------------------------------------------------------------------------------
 
 def TestInternetConnectionOld(remote_host='www.google.com'): # 74.125.113.99
-#    return True
-
+    """
+    Ancient method to check Internet connection. 
+    """
     try:
         (family, socktype, proto, garbage, address) = socket.getaddrinfo(remote_host, "http")[0]
     except Exception, e:
@@ -509,6 +510,9 @@ def TestInternetConnectionOld(remote_host='www.google.com'): # 74.125.113.99
 #------------------------------------------------------------------------------ 
 
 def TestInternetConnectionOld2(remote_hosts=None, timeout=10):
+    """
+    A little bit more smart method to check Internet connection. 
+    """
     if remote_hosts is None:
         remote_hosts = []
         remote_hosts.append('www.google.com')
@@ -517,17 +521,17 @@ def TestInternetConnectionOld2(remote_hosts=None, timeout=10):
         # remote_hosts.append('www.yahoo.com')
         # remote_hosts.append('www.baidu.com')
     def _response(src, result):
-        print '_response', err, hosts, index
+        # print '_response', err, hosts, index
         result.callback(None)
     def _fail(err, hosts, index, result):
-        print 'fail', hosts, index
+        # print 'fail', hosts, index
         reactor.callLater(0, _call, hosts, index+1, result)
     def _call(hosts, index, result):
-        print 'call' , hosts, index, result
+        # print 'call' , hosts, index, result
         if index >= len(hosts):
             result.errback(None)
             return
-        print '    ', hosts[index]
+        # print '    ', hosts[index]
         d = getPageTwisted(hosts[index])
         d.addCallback(_response, result)
         d.addErrback(_fail, hosts, index, result)
@@ -538,6 +542,10 @@ def TestInternetConnectionOld2(remote_hosts=None, timeout=10):
 #------------------------------------------------------------------------------  
 
 def TestInternetConnection(remote_hosts=None, timeout=10):
+    """
+    Ping google, facebook and youtube to check Internet connection state.
+    PREPRO switch to our own stun servers ?
+    """
     if remote_hosts is None:
         remote_hosts = []
         remote_hosts.append('http://www.google.com')
@@ -553,46 +561,49 @@ def TestInternetConnection(remote_hosts=None, timeout=10):
 #------------------------------------------------------------------------------ 
 
 def SendEmail(TO, FROM, HOST, PORT, LOGIN, PASSWORD, SUBJECT, BODY, FILES):
+    """
+    Can send a email to SMTP server.
+    """
 #    try:
-        import smtplib
-        from email import Encoders
-        from email.MIMEText import MIMEText
-        from email.MIMEBase import MIMEBase
-        from email.MIMEMultipart import MIMEMultipart
-        from email.Utils import formatdate
+    import smtplib
+    from email import Encoders
+    from email.MIMEText import MIMEText
+    from email.MIMEBase import MIMEBase
+    from email.MIMEMultipart import MIMEMultipart
+    from email.Utils import formatdate
 
-        msg = MIMEMultipart()
-        msg["From"] = FROM
-        msg["To"] = TO
-        msg["Subject"] = SUBJECT
-        msg["Date"]    = formatdate(localtime=True)
-        msg.attach(MIMEText(BODY))
+    msg = MIMEMultipart()
+    msg["From"] = FROM
+    msg["To"] = TO
+    msg["Subject"] = SUBJECT
+    msg["Date"]    = formatdate(localtime=True)
+    msg.attach(MIMEText(BODY))
 
-        # attach a file
-        for filePath in FILES:
-            if not os.path.isfile(filePath):
-                continue
-            part = MIMEBase('application', "octet-stream")
-            part.set_payload( open(filePath,"rb").read() )
-            Encoders.encode_base64(part)
-            part.add_header('Content-Disposition', 'attachment; filename="%s"' % os.path.basename(filePath))
-            msg.attach(part)
+    # attach a file
+    for filePath in FILES:
+        if not os.path.isfile(filePath):
+            continue
+        part = MIMEBase('application', "octet-stream")
+        part.set_payload( open(filePath,"rb").read() )
+        Encoders.encode_base64(part)
+        part.add_header('Content-Disposition', 'attachment; filename="%s"' % os.path.basename(filePath))
+        msg.attach(part)
 
-        s = smtplib.SMTP(HOST, PORT)
+    s = smtplib.SMTP(HOST, PORT)
 
-        #s.set_debuglevel(True) # It's nice to see what's going on
+    #s.set_debuglevel(True) # It's nice to see what's going on
 
-        s.ehlo() # identify ourselves, prompting server for supported features
+    s.ehlo() # identify ourselves, prompting server for supported features
 
-        if s.has_extn('STARTTLS'):
-            s.starttls()
-            s.ehlo() # re-identify ourse
+    if s.has_extn('STARTTLS'):
+        s.starttls()
+        s.ehlo() # re-identify ourse
 
-        s.login(LOGIN, PASSWORD)  # optional
+    s.login(LOGIN, PASSWORD)  # optional
 
-        failed = s.sendmail(FROM, TO, msg.as_string())
+    failed = s.sendmail(FROM, TO, msg.as_string())
 
-        s.close()
+    s.close()
 
 #    except:
 #        dhnio.DprintException()
@@ -795,6 +806,12 @@ class MultiPartProducer:
 #------------------------------------------------------------------------------ 
 
 def uploadHTTP(url, files, data, progress=None, receiverDeferred=None):
+    """
+    A smart way to upload a file over HTTP POST method.
+    Use `MultiPartProducer` and `StringReceiver` classes.
+    Great Thanks to Mariano!
+        http://marianoiglesias.com.ar/python/file-uploading-with-multi-part-encoding-using-twisted/
+    """
     # producerDeferred = Deferred()
     receiverDeferred = Deferred()
     
@@ -809,9 +826,11 @@ def uploadHTTP(url, files, data, progress=None, receiverDeferred=None):
     request.addCallback(lambda response: response.deliverBody(myReceiver))
     
 #------------------------------------------------------------------------------ 
-
-# return a list of IPs for current active network interfaces 
+ 
 def getNetworkInterfaces():
+    """
+    Return a list of IPs for current active network interfaces.
+    """
     import platform
     plat = platform.uname()[0]
     
@@ -885,6 +904,10 @@ def getNetworkInterfaces():
 
 
 def test1():
+    """
+    Test1.
+    TODO turn this into unit tests. 
+    """
     def done(x, filen):
         print 'done'
         print x
@@ -939,7 +962,7 @@ def test5():
               'smtp.gmail.com',
               587,
               'datahaven.net.mail@gmail.com',
-              'datahaven.net.mail',
+              'datahavennetmail',
               'subj',
               'some body \n\n body',
               ['__init__.pyc'],)

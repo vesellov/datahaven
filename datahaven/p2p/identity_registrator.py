@@ -287,7 +287,7 @@ def CreateNewIdentity():
 
     dhnio.Dprint(4, 'identity_registrator.CreateNewIdentity %s %s ' % (login, externalIP))
     
-    idurl = 'http://'+settings.DefaultIdentityServer()+'/'+login.lower()+'.xml'
+    idurl = 'http://'+settings.IdentityServerName()+'/'+login.lower()+'.xml'
     ident = identity.identity( )
     ident.sources.append(idurl)
 

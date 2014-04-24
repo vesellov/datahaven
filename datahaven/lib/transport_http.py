@@ -9,6 +9,14 @@
 #
 #
 
+"""
+This module allow you to send files over plain HTTP.
+One user (with opened IP) starts a server and listen for others.
+Second user connect to him when need to send.
+To receive packets ( from the first user ) - second user will request HTTP server periodically
+to check for incoming files. First user will cache last 10 outgoing files. 
+This is very old and not used any more.
+"""
 
 import os
 import sys

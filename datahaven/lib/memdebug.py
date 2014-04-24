@@ -1,5 +1,11 @@
 # memdebug.py
 
+"""
+This is to test memory usage.
+It was useful when I looked for memory leaks.
+Can start a local HTTP server to keep track of all python objects in the memory.
+"""
+
 import cherrypy
 import dowser
 

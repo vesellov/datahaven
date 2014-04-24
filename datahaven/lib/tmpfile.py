@@ -7,6 +7,11 @@
 #    All rights reserved.
 #
 
+"""
+Keep track of temporary files created in the program.
+The temp folder is placed in the DataHaven.NET data directory. 
+All files are divided into several sub folders.
+"""
 
 import os
 import tempfile
@@ -87,6 +92,13 @@ _SubDirs = {
 
 
 def init(temp_dir_path=''):
+    """
+    Must be called before all other things here.
+        - check existence and access mode of temp folder
+        - creates a needed sub folders  
+        - call `startup_clean()`
+        - starts collector task to call method `collect()` every 5 minutes
+    """
     dhnio.Dprint(4, 'tmpfile.init')
     global _TempDirPath
     global _SubDirs
@@ -135,8 +147,9 @@ def init(temp_dir_path=''):
 
 
 def shutdown():
-    # we do not want to remove any files here
-    # just stop the collector task
+    """
+    Do not need to remove any files here, just stop the collector task.
+    """
     dhnio.Dprint(4, 'tmpfile.shutdown')
     global _CollectorTask
     if _CollectorTask is not None:
@@ -146,6 +159,9 @@ def shutdown():
 
 
 def subdir(name):
+    """
+    Return a path to given sub folder. 
+    """
     global _TempDirPath
     if _TempDirPath is None:
         init()
@@ -153,6 +169,9 @@ def subdir(name):
 
 
 def register(filepath):
+    """
+    You can create a temp file in another place and call this method to be able to hadle this file later.
+    """
     global _FilesDict
     subdir, filename = os.path.split(filepath)
     name = os.path.basename(subdir)
@@ -161,11 +180,12 @@ def register(filepath):
     _FilesDict[name][filepath] = time.time()
 
 
-# make a new file under sub folder name
-# return it's file descriptor and path
-# remember you need to close the file descriptor. by your self
-# tmpfile will remove it later - do not worry.
 def make(name, extension='', prefix=''):
+    """
+    Make a new file under sub folder `name` and return a tuple of it's file descriptor and path.
+    Remember you need to close the file descriptor by your self.
+    The `tmpfile` module will remove it later - do not worry. This is a job for our collector.
+    """
     global _TempDirPath
     global _FilesDict
     if _TempDirPath is None:
@@ -184,6 +204,10 @@ def make(name, extension='', prefix=''):
 
 
 def erase(name, filename, why='no reason'):
+    """
+    However you can remove not needed file immediately, this is a good way also.
+    But outside of this module you better use method `throw_out`.
+    """
     global _FilesDict
     if name in _FilesDict.keys():
         try:
@@ -210,6 +234,9 @@ def erase(name, filename, why='no reason'):
 
 
 def throw_out(filepath, why='dont know'):
+    """
+    A more smart way to remove not needed temporary file, accept a full `filepath`.
+    """
     global _FilesDict
     global _SubDirs
     subdir, filename = os.path.split(filepath)
@@ -218,7 +245,9 @@ def throw_out(filepath, why='dont know'):
 
 
 def collect():
-    # remove old files
+    """
+    Removes old temporary files.
+    """
     # dhnio.Dprint(10, 'tmpfile.collect')
     global _FilesDict
     global _SubDirs
@@ -265,9 +294,10 @@ def collect():
 
 
 def startup_clean():
-    # at startup we want to scan all sub folders
-    # and remove the old files
-    # we will get creation time with os.stat
+    """
+    At startup we want to scan all sub folders and remove the old files.
+    We will get creation time with built-in `os.stat` method.
+    """
     global _TempDirPath
     global _SubDirs
     dhnio.Dprint(6, 'tmpfile.startup_clean in %s' % _TempDirPath)

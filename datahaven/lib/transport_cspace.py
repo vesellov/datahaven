@@ -9,6 +9,20 @@
 #
 #
 
+"""
+Browse folders "cspace", "ncrypt0", "nitro".
+This is a parts of one very nice project - CSpace.
+Unfortunately it is dead, I was failed to connect with developer.
+However I saw some recent posts and I also talked with one guy, who built the release successfully.
+Search for "CSpace python" on Google to get more details.
+
+I decided to not use ncrypt library and made aliases in the ncrypt0 folder. 
+Now my "fork" of CSpace uses PyOpenSSL and other Twisted code.
+However DiffieHellman and some other "security" stuff is disabled.
+Definitely need a lot more work with CSpace code if we plan to use it.
+I would rewrite some parts of code to use Twisted reactor and I/O operations.  
+"""
+
 import os
 import sys
 import time 
@@ -34,7 +48,6 @@ import dhnio
 import misc
 import settings
 import tmpfile
-import nonblocking
 import automat
 
 #------------------------------------------------------------------------------ 

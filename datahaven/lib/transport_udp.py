@@ -7,7 +7,14 @@
 #      http://datahaven.net/terms_of_use.html
 #    All rights reserved.
 #
-#
+
+"""
+Transfer files over UDP protocol.
+Keeps opened sessions with remote peers.
+At first detect the external and local IP's of that machine.
+If they are equal - this seems to be an opened IP machine and stuff from `transport_udp_server` is used.
+In other case call code from `transport_udp_session`.
+"""
 
 import os
 import sys

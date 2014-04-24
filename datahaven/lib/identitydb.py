@@ -1,5 +1,15 @@
 #!/usr/bin/python
 #identitydb.py
+#
+#    Copyright DataHaven.NET LTD. of Anguilla, 2006
+#    Use of this software constitutes acceptance of the Terms of Use
+#      http://datahaven.net/terms_of_use.html
+#    All rights reserved.
+
+"""
+Here is a simple1 database for identities cache.
+Also keep track of changing identities sources and maintain a several "index" dictionaries to speed up processes.  
+"""
 
 import os
 import dhnio
@@ -19,6 +29,10 @@ _LocalIPs = {}
 #------------------------------------------------------------------------------ 
 
 def init():
+    """
+    Need to call before all other methods.
+    Check to exist and create a folder to keep all cached identities.
+    """
     dhnio.Dprint(4,"identitydb.init")
     iddir = settings.IdentityCacheDir()
     if not os.path.exists(iddir):
@@ -26,6 +40,9 @@ def init():
         dhnio._dir_make(iddir)
 
 def clear(exclude_list=None):
+    """
+    Clear the database, indexes and cached files from disk.
+    """
     global _IdentityCache
     global _Contact2IDURL
     global _IPPort2IDURL
@@ -52,14 +69,23 @@ def clear(exclude_list=None):
         dhnio.Dprint(6, 'identitydb.clear remove ' + path)
 
 def size():
+    """
+    Return a number of items in the database.
+    """
     global _IdentityCache
     return len(_IdentityCache)
 
 def has_key(idurl):
+    """
+    Return True if that IDURL already cached.
+    """
     global _IdentityCache
     return _IdentityCache.has_key(idurl)
 
 def idset(idurl, id_obj):
+    """
+    Important method - need to call that to update indexes.
+    """
     global _IdentityCache
     global _Contact2IDURL
     global _IDURL2Contacts
@@ -83,12 +109,19 @@ def idset(idurl, id_obj):
             _IPPort2IDURL[ipport] = idurl 
         except:
             pass
+    # TODO when identity contacts changed - need to remove old items from _Contact2IDURL
 
 def idget(url):
+    """
+    Get identity from cache.
+    """
     global _IdentityCache
     return _IdentityCache.get(url, None)
 
 def idremove(url):
+    """
+    Remove identity from cache, also update indexes. Not remove local file.
+    """
     global _IdentityCache
     global _Contact2IDURL
     global _IDURL2Contacts
@@ -107,10 +140,17 @@ def idremove(url):
     return idobj
 
 def idcontacts(idurl):
+    """
+    A fast way to get identity contacts.
+    """
     global _IDURL2Contacts
     return list(_IDURL2Contacts.get(idurl, set()))
 
 def get(url):
+    """
+    A smart way to get identity from cache.
+    If not cached in memory but found on disk - will cache from disk.
+    """
     if has_key(url):
         return idget(url)
     else:
@@ -141,14 +181,24 @@ def get(url):
         return None
 
 def get_idurls_by_contact(contact):
+    """
+    Use index dictionary to get IDURL with given contact. 
+    """
     global _Contact2IDURL
     return list(_Contact2IDURL.get(contact, set()))
 
 def get_idurl_by_ip_port(ip, port):
+    """
+    Use index dictionary to get IDURL by IP and PORT. 
+    """
     global _IPPort2IDURL
     return _IPPort2IDURL.get((ip, int(port)), None)
 
 def update(url, xml_src):
+    """
+    This is a correct method to update an identity in the database.
+    PREPRO need to check that date or version is after old one so not vulnerable to replay attacks.
+    """
     try:
         newid = identity.identity(xmlsrc=xml_src)
     except:
@@ -182,13 +232,15 @@ def update(url, xml_src):
             idset(url, newid)
             return True
 
-    # PREPRO need to check that date or version is after old one so not vulnerable to replay attacks
     dhnio.WriteFile(filename, xml_src)             # publickeys match so we can update it
     idset(url, newid)
 
     return True
 
 def remove(url):
+    """
+    Top method to remove identity from cache - also remove local file.
+    """
     filename = os.path.join(settings.IdentityCacheDir(), nameurl.UrlFilename(url))
     if os.path.isfile(filename):
         dhnio.Dprint(6, "identitydb.remove file %s" % filename)
@@ -199,20 +251,32 @@ def remove(url):
     idremove(url)
 
 def update_local_ips_dict(local_ips_dict):
+    """
+    This method intended to maintain a local IP's index.
+    """
     global _LocalIPs
     # _LocalIPs.clear()
     # _LocalIPs = local_ips_dict
     _LocalIPs.update(local_ips_dict)
     
 def get_local_ip(idurl):
+    """
+    This is to get a local IP of some user from the index. 
+    """
     global _LocalIPs
     return _LocalIPs.get(idurl, None)
 
 def has_local_ip(idurl):
+    """
+    To check for some known local IP of given user.
+    """
     global _LocalIPs
     return _LocalIPs.has_key(idurl)
 
 def search_local_ip(ip):
+    """
+    Search all index for given local IP and return a first found idurl.
+    """
     global _LocalIPs
     for idurl, localip in _LocalIPs.items():
         if localip == ip:
@@ -222,9 +286,10 @@ def search_local_ip(ip):
 #------------------------------------------------------------------------------ 
 
 def print_id(url):
+    """
+    For debug purposes.
+    """
     if has_key(url):
-##        print "has key"
-##        idForKey = _IdentityCache[url]
         idForKey = get(url)
         dhnio.Dprint(6, str(idForKey.sources) )
         dhnio.Dprint(6, str(idForKey.contacts ))
@@ -232,14 +297,18 @@ def print_id(url):
         dhnio.Dprint(6, str(idForKey.signature ))
 
 def print_keys():
+    """
+    For debug purposes.
+    """
     global _IdentityCache
     for key in _IdentityCache.keys():
         dhnio.Dprint(6, key)
-##    print "PrintCacheKeys"
 
 def print_cache():
+    """
+    For debug purposes.
+    """
     global _IdentityCache
-##    print "PrintCacheKeys"
     for key in _IdentityCache.keys():
         dhnio.Dprint(6, "---------------------" )
         print_id(key)

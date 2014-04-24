@@ -9,6 +9,94 @@
 #
 #
 
+"""
+This is a core module.
+
+Identity might better be called business card, since it is really
+mostly just your contatct info.  But more than that since public key.
+Hum.
+
+Example in http://identity.datahaven.net/veselin.xml
+
+Could have info just be XML on a web page.  So an Identity could be a URL.
+If we do this, then we get the scaling of DNS for free.  
+
+DataHaven.net could have mappings from unique short names to URLs for
+identities.  Or we could just make sure that the MD5 of the URL was
+always unique (this is 16 bytes).  Or we could go with the primary URL.  
+Hum.  DataHaven.net does need some sort of unique identifier, as do others.  
+Also, would be nice to be able to send someone a list of their 
+current 64 nodes they use, or the 300 that use them, without
+crazy amounts of data.  For display
+of backup status I would like a unique identifier that is short,
+like 15 chars or something.  Can get main part of URLs that is
+short like that, say "id.ai/vince1".  Seems funny to limit the
+length of a URL like this, but we could as there will be
+identity servers and they can get very short names like id.ai.
+If we forced them all to be ".com/" we could display "id:vince1",
+or "cate:vince1", which is short.  The force could just be
+a lower rating for those that did not do this.  Could have
+short name take up 2 lines out of my 5, and just plan on 
+letting user click on things to change what things are
+displayed.  So they have 5 lines and full URL takes 2,
+but last of URL is just 1 line, and maybe they don't 
+care what the name is and just display other stuff.
+
+If we open it up a bit, people could just use tinyurl.com/foolksd
+if their URL was too long.  We could limit primary URL
+to 32 chars and not really have any trouble.  Can say it
+must start with http:// (so we don't have to store that)
+and be less than 32 chars after that.  If does not really
+start with http:// then tiny URL can fix that too.
+
+It is a bit like bittorrent using a .torrent file on the
+web to get the original start for things.  This seems good.
+
+All Identity/business-card info in XML:
+PublicKey
+primary URL for this identity (say https://cate.com/vinceID)
+backup URLs for this identity (maybe URLs) that secondary this identity
+contact: domain/port  pairs  (good even if IP out of date)
+contact: IP/port  pairs    (good even if DNS in trouble)
+contact: nat-traverser/ID pairs  (for those without fixed IPs)
+contact: emails for this identity (recommend people have one just in case)
+contact: http://foobar.com/data.pl    (use a web account to forward requests/data)
+scrubbers: URL1, URL2, URL3           (people who can access our data if we stop checking it)
+date
+version number
+signature on all identity info
+
+Contact list has enough info we can tell what protocol to use.
+User could put in order he prefers us to try the contact methods.  
+So we might have a list like:
+    datahaven:offshore.ai:5008
+    datahaven:209.88.68.34:5008
+    stun:stun.me:90
+    vertex:foo@bar.com
+    email:datahaven@gmail.com
+    email:datahaven@hotmal.com
+    http://foobar.com/data.pl?vince    
+
+Really best if all the identity servers use SSL.
+We could make certificates for identity servers, but might
+not bother as it is probably best if they have ones that
+web browsers understand.    
+On the other hand, this might be a good way to get into the certificate-authority business. :-)
+
+Having XML on a web site means we can start before we
+really have identity server code.  Also means it is
+easy to grok and debug.
+
+As long as identity server is just some CGI that we can run on
+any ISP anywhere (pair.com etc), and users always use 3 identity servers,
+then we could just pop up as many as needed on ISPs all over
+the world as fast as we grew.  It would not be an infrastructure
+limitation really.  And we don't need to farm it out.
+Identity's are signed and have a version number, so an identity
+server can pass on an update that it gets to other servers listed
+for that identity (in case there is network partition funnyness)
+to help keep all of them updated. 
+"""
 
 import os
 import sys
@@ -44,8 +132,19 @@ default_identity_src = """<?xml version="1.0" encoding="ISO-8859-1"?>
 
 
 class identity:
-    # Started from page 151 in "Fundations of Python Network Programming"
-    # We are passed an XML version of an identity and make an Identity
+    """
+    We are passed an XML version of an identity and make an Identity.
+    Also can construct an Identity by providing all fields. 
+    The fields is:
+        sources : list of URLs, first is primary URL and name
+        certificates : signatures by identity servers
+        publickey : the public part of user's key, string in twisted.conch.ssh format
+        contacts : list of ways to contact this identity
+        scrubbers : list of URLs for people allowed to scrub
+        date : the date an time when that identity was created 
+        version : a version string
+        signature : digital signature to protect the file
+    """
     sources = []        # list of URLs, first is primary URL and name
     certificates = []   # signatures by identity servers
     publickey = ""      # string in twisted.conch.ssh format
@@ -89,6 +188,9 @@ class identity:
             self.unserialize(dhnio.ReadTextFile(filename))
 
     def clear_data(self):
+        """
+        Erase all fields data, clear identity.
+        """
         self.sources = []      # list of URLs for fetching this identiy, first is primary URL and name - called IDURL
         self.certificates = [] # identity servers each sign the source they are with - hash just (IDURL + publickey)
         self.publickey = ''    # string
@@ -100,6 +202,9 @@ class identity:
         self.signature = ''    # digital signature
 
     def isCorrect(self):
+        """
+        Do some checking on the object fields.
+        """
         if len(self.contacts) == 0:
             return False
         if len(self.sources) == 0:
@@ -111,87 +216,138 @@ class identity:
         return True
 
     def getIDURL(self, index = 0):
+        """
+        Return a source IDURL - this is a user ID.
+        Must have at least one IDURL in the `sources`.
+        """
         result = self.sources[index].strip()
         return result
 
     def getIDName(self, index = 0):
+        """
+        Return an account name - this is just a user name taken from IDURL:
+            "veselin" for "http://identity.datahaven.net/veselin.xml"
+        """
         protocol, host, port, filename = nameurl.UrlParse(self.getIDURL(index))
         return filename.strip()[0:-4]
 
-    def setIDName(self, name, index = 0):
-        protocol, host, port, filename = nameurl.UrlParse(self.getIDURL(index))
-        url = nameurl.UrlMake(protocol, host, port, name+'.xml')
-        self.sources[index] = url.encode("ascii").strip()
-
     def clearContacts(self):
+        """
+        Erase all items in identity contacts list.
+        """
         self.contacts = []
 
     def getContacts(self):
+        """
+        Return identity contacts list.
+        """
         return self.contacts
 
     def getContactsNumber(self):
+        """
+        Return identity contacts number.
+        """
         return len(self.contacts)
 
     def getContact(self, index=0):
+        """
+        Return a contact with given `index` number or None.
+        """ 
         try:
-##            return self.contacts[index].encode("ascii").strip()
             return self.contacts[index]
-            # PREPRO don't understand why these were unicode
         except:
             return None
 
     def setContact(self, contact, index):
-##        self.contacts[index] = contact.encode("ascii").strip()
+        """
+        Set a string value `contact` at given `index` position in the list.
+        """
         self.contacts[index] = contact
 
     def setCertificate(self, certificate):
-        self.certificate=certificate
+        """
+        Not used yet. 
+        TODO. Need to ask Vince for more details about id certificates.
+        """
+        self.certificate = certificate
         self.sign()
 
     def setContactPort(self, index, newport):
+        """
+        This is useful when listening port get changed. 
+        """
         protocol, host, port, filename = nameurl.UrlParse(self.contacts[index])
         url = nameurl.UrlMake(protocol, host, newport, filename)
         self.contacts[index] = url.encode("ascii").strip()
 
     def getContactHost(self, index):
+        """
+        Get the host name part of the contact.
+        """
         protocol, host, port, filename = nameurl.UrlParse(self.contacts[index])
         return host
 
     def getContactPort(self, index):
+        """
+        Get the port part of the contact.
+        """
         protocol, host, port, filename = nameurl.UrlParse(self.contacts[index])
         return port
 
     def setContactHost(self, host, index):
+        """
+        This is to set only host part of the contact. 
+        """
         protocol, host_, port, filename = nameurl.UrlParse(self.contacts[index])
         url = nameurl.UrlMake(protocol, host, port, filename)
         self.contacts[index] = url.encode("ascii").strip()
 
     def getContactParts(self, index):
+        """
+        Return tuple with 4 parts of the contact:
+            (proto, host, port, filename) 
+        """
         return nameurl.UrlParse(self.contacts[index])
 
     def getProtoParts(self, proto):
+        """
+        See `getProtoContact`, return a tuple for given `proto`:
+            (proto, host, port, filename) 
+        """
         contact = self.getProtoContact(proto)
         if contact is None:
             return None, None, None, None
         return nameurl.UrlParse(contact)
 
     def getProtoHost(self, proto, default=None):
+        """
+        See `getProtoParts`, return a host of a contact with given `proto`.
+        """
         protocol, host, port, filename = self.getProtoParts(proto)
         if host is None:
             return default
         return host
 
     def setContactParts(self, index, protocol, host, port, filename):
+        """
+        Set a contact at given position by its 4 parts.
+        """
         url = nameurl.UrlMake(protocol, host, port, filename)
         self.contacts[index] = url.encode("ascii").strip()
 
     def getContactIndex(self, proto):
+        """
+        Search a first contact with given `proto`.
+        """
         for i in range(0, len(self.contacts)):
             if self.contacts[i].find(proto+"://") == 0:
                 return i
         return -1
 
     def setProtoContact(self, proto, contact):
+        """
+        Found a contact with given `proto` and set its value or append a new contact.
+        """
         for i in range(0,len(self.contacts)):
             proto_, host, port, filename = nameurl.UrlParse(self.contacts[i])
             if proto_.strip() == proto.strip():
@@ -200,12 +356,20 @@ class identity:
         self.contacts.append(contact)
 
     def getProtoContact(self, proto):
+        """
+        Search for first found contact with given `proto`. Return None if not found a contact.
+        """
         for contact in self.contacts:
             if contact.startswith(proto+"://"):
                 return contact
         return None
 
     def getProtoOrder(self):
+        """
+        Return a list of "proto" parts of all contacts.
+        In other words return a list of all supported protocols.
+        This keeps the order of the protos - this is a sort of priority of the transports. 
+        """
         orderL = []
         for c in self.contacts:
             proto,host,port,filename = nameurl.UrlParse(c)
@@ -213,6 +377,9 @@ class identity:
         return orderL
 
     def getContactsByProto(self):
+        """
+        Return a dictionary of all contacts where keys are protos.
+        """
         d = {}
         for i in range(len(self.contacts)):
             proto, x, x, x = nameurl.UrlParse(self.contacts[i])
@@ -220,12 +387,19 @@ class identity:
         return d
 
     def getContactProto(self, index):
+        """
+        Return a proto part of the contact at given position.
+        """
         c = self.getContact(index)
         if c is None:
             return None
         return nameurl.UrlParse(c)[0]
 
     def getIP(self, proto=None):
+        """
+        A smart way to get the IP address of the user.
+        Check TCP proto first, than UDP.
+        """
         if proto:
             host = self.getProtoHost(proto)
             if host:
@@ -241,12 +415,21 @@ class identity:
         return host
 
     def deleteProtoContact(self, proto):
+        """
+        Remove all contacts with given `proto`.
+        """
         for contact in self.contacts:
             if contact.find(proto+"://") == 0:
                 self.contacts.remove(contact)
 
-    #move given protocol in the bottom of the contacts list
     def pushProtoContact(self, proto):
+        """
+        Move given protocol in the bottom of the contacts list.
+        First contact in the list have more priority for remote machine,
+        so we can manipulate our protos to get more p2p connections.
+        Push less reliable protocols to the end of the list.
+        This is to decrease its priority. 
+        """
         i = self.getContactIndex(proto)
         if i < 0:
             return
@@ -254,8 +437,11 @@ class identity:
         del self.contacts[i]
         self.contacts.append(contact)
 
-    #move given protocol to the top of the contacts list
     def popProtoContact(self, proto):
+        """
+        Move given protocol to the top of the contacts list.
+        This is to increase its priority.
+        """
         i = self.getContactIndex(proto)
         if i < 0:
             return
@@ -263,9 +449,16 @@ class identity:
         del self.contacts[i]
         self.contacts.insert(0, contact)
 
-    # http://docs.python.org/lib/module-urlparse.html
-    # note that certificates and signatures are not part of what is hashed
     def makehash(self):
+        """
+        http://docs.python.org/lib/module-urlparse.html
+        Note that certificates and signatures are not part of what is hashed.
+        PREPRO 
+        Thinking of standard that fields have labels and empty fields are left out,
+        including label, so future versions could have same signatures as older which had fewer fields - 
+        can just do this for fields after these, so maybe don't need to change anything for now.
+        Don't include certificate - so identity server can just add it.
+        """
         sep = "-"
         c = ''
         for i in self.contacts:
@@ -277,13 +470,13 @@ class identity:
         for i in self.sources:
             sr += i
         stufftohash = c + sep + s + sep + sr + sep + self.version + sep + self.postage + sep + self.date.replace(' ', '_')
-        #PREPRO thinking of standard that fields have lables and empty fields are left out,
-        #including label, so future versions could have same signatures as older which had fewer fields - can just do this for fields after these,
-        #so maybe don't need to change anything for now
-        hashcode = dhncrypto.Hash(stufftohash)          # don't include certificate - so identity server can just add it
+        hashcode = dhncrypto.Hash(stufftohash)          
         return hashcode
 
     def sign(self):
+        """
+        Make a hash, generate digital signature on it and remember the signature.
+        """
         hashcode = self.makehash()
         self.signature = dhncrypto.Sign(hashcode)
 ##        if self.Valid():
@@ -293,7 +486,10 @@ class identity:
 ##            raise Exception("sign fails")
 
     def Valid(self):
-        # PREPRO - should test certificate too
+        """
+        This will make a hash and verify the signature by public key.
+        PREPRO - should test certificate too.
+        """
         hashcode = self.makehash()
         result = dhncrypto.VerifySignature(
             self.publickey,
@@ -302,6 +498,9 @@ class identity:
         return result
 
     def unserialize(self, xmlsrc):
+        """
+        A smart method to load object fields data from XML content.
+        """
         try:
             doc = minidom.parseString(xmlsrc)
         except:
@@ -312,16 +511,29 @@ class identity:
         self.from_xmlobj(doc.documentElement)
 
     def unserialize_object(self, xmlobject):
+        """
+        This is almost same but load data from existing DOM object.
+        """
         self.clear_data()
         self.from_xmlobj(xmlobject)
 
     def serialize(self):
+        """
+        A method to generate XML content for that identity object. 
+        Used to save identity on disk or transfer over network.  
+        """
         return self.toxml()[0]
 
     def serialize_object(self):
+        """
+        Almost the same but return a DOM object.
+        """
         return self.toxml()[1]
 
     def toxml(self):
+        """
+        Call this to convert to XML format. 
+        """
         impl = getDOMImplementation()
         doc = impl.createDocument(None, 'identity', None)
         root = doc.documentElement
@@ -376,6 +588,9 @@ class identity:
         return doc.toprettyxml("  ", "\n", "ISO-8859-1"), root, doc
 
     def from_xmlobj(self, root_node):
+        """
+        This is to load identity fields from DOM object - used during `unserialize` procedure.
+        """
         if root_node is None:
             return
         try:
@@ -427,13 +642,17 @@ class identity:
 
 #-------------------------------------------------------------------------------
 
-def makeDefaultIdentity(name='', ip='', successTCP='', successSSH='', successHTTP=''):
-    dhnio.Dprint(4, 'identity.makeDefaultIdentity: %s %s tcp:%s ssh:%s http:%s' % (name, ip, successTCP, successSSH, successHTTP))
+def makeDefaultIdentity(name='', ip=''):
+    """
+    Use some local settings and config files to create some new identity.
+    Nice to provide a user name or it will have a form like: [ip address]_[date].     
+    """
+    dhnio.Dprint(4, 'identity.makeDefaultIdentity: %s %s' % (name, ip))
     if ip == '':
         ip = dhnio.ReadTextFile(settings.ExternalIPFilename())
     if name == '':
         name = ip.replace('.', '-') + '_' + time.strftime('%M%S')
-    servername = settings.DefaultIdentityServer()
+    servername = settings.IdentityServerName()
     url = 'http://'+servername+'/'+name.lower()+'.xml'
 
     ident = identity(xmlsrc=default_identity_src)
@@ -483,6 +702,9 @@ def makeDefaultIdentity(name='', ip='', successTCP='', successSSH='', successHTT
 #-------------------------------------------------------------------------------
 
 def test1():
+    """
+    Some tests.
+    """
     myidentity=misc.getLocalIdentity()
     print 'getIP =', myidentity.getIP()
     if myidentity.Valid():
@@ -508,6 +730,9 @@ def test1():
 
 
 def test2():
+    """
+    More tests.
+    """
     ident = makeDefaultIdentity()
     print ident.serialize() 
 
@@ -515,6 +740,9 @@ def test2():
 
 
 def main():
+    """
+    This should print a current identity or create a new one.
+    """
     misc.loadLocalIdentity()
     if misc.isLocalIdentityReady():
         misc.getLocalIdentity().sign()
@@ -529,6 +757,9 @@ def main():
         misc.loadLocalIdentity()
         
 def update():
+    """
+    A good way to check all things - load and sign again.
+    """
     dhnio.init()
     settings.init()
     src = dhnio.ReadTextFile(settings.LocalIdentityFilename())

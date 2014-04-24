@@ -1,13 +1,37 @@
+#!/usr/bin/python
 #nameurl.py
+#
+#    Copyright DataHaven.NET LTD. of Anguilla, 2006
+#    Use of this software constitutes acceptance of the Terms of Use
+#      http://datahaven.net/terms_of_use.html
+#    All rights reserved.
+#
+
+"""
+Here is a methods to work with URL strings.
+We assume DHN URLs are of the form ssh://host.name.com:port/fooobar.xml maybe no foobar.xml
+Tried urlparse and urlsplit and they move the location from the second to the 3rd
+argument if you have "http" vs "ssh" or "tcp".  This seems like trouble.
+"""
 
 import re
 import urllib
 import urlparse
 
-#  We assume DHN URLs are of the form ssh://host.name.com:port/fooobar.xml  maybe no foobar.xml
-#  Tried urlparse and urlsplit and they move the location from the second to the 3rd
-#     argument if you have "http" vs "ssh" or "tcp".  This seems like trouble.
+#------------------------------------------------------------------------------ 
+
+legalchars="#.-_()ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+legalset= set(legalchars)
+
+#------------------------------------------------------------------------------ 
+
 def UrlParse(url):
+    """
+    Return a tuple of strings from url address : ( proto, host, port, filename )
+        >>> import nameurl
+        >>> nameurl.UrlParse('http://identity.datahaven.net/veselin.xml')
+        ('http', 'identity.datahaven.net', '', 'veselin.xml')
+    """
     o = urlparse.urlparse(url)
     proto = o.scheme.strip()
     base = o.netloc.lstrip(' /')
@@ -36,6 +60,13 @@ def UrlParse(url):
 
 
 def UrlMake(protocol='', machine='', port='', filename='', parts=None):
+    """
+    Reverse method, create a URL from 4 pieces: 
+        - proto 
+        - host 
+        - port 
+        - filename
+    """
     if parts is not None:
         protocol, machine, port, filename = parts
     url = protocol+'://'+machine
@@ -46,10 +77,11 @@ def UrlMake(protocol='', machine='', port='', filename='', parts=None):
     return url
 
 
-legalchars="#.-_()ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-legalset= set(legalchars)
-
 def UrlFilename(url):
+    """
+    Generate a 'safe' filename from URL address.
+    This is useful when need to store identity files on disk. 
+    """
     if url is None:
         return None
     result = url.replace("://","###")
@@ -63,7 +95,11 @@ def UrlFilename(url):
 #            raise Exception("nameurl.UrlFilename ERROR illegal character: \n" + url)
     return result
 
+
 def FilenameUrl(filename):
+    """
+    A reverse method for `UrlFilename`.
+    """
     src = filename.strip().lower()
     if not src.startswith('http###'):
         return None
@@ -71,7 +107,14 @@ def FilenameUrl(filename):
     src = 'http://' + src[7:].replace('#', '/')
     return str(src)
 
+
 def UrlFilenameHTML(url):
+    """
+    Another method to simplify URL, so you can create a filename from URL string.
+        >>> import nameurl
+        >>> nameurl.UrlFilenameHTML('http://identity.datahaven.net/veselin.xml')
+        'identity_datahaven_net_veselin_xml'     
+    """
     global legalset
     s = url.replace('http://', '')
     o = ''
@@ -82,29 +125,44 @@ def UrlFilenameHTML(url):
             o += x
     return o
 
-# deal with the identities
-# for http://identity.datahaven.net/kinggeorge.xml
-# should return "kinggeorge"
+
 def GetName(url):
+    """
+    Deal with the identities, return a filename (without extension) from URL address. 
+        >>> nameurl.GetName('http://identity.datahaven.net/kinggeorge.xml')
+        'kinggeorge'    
+    """
     if url in [None, 'None', '',]:
         return ''
     if not url.endswith('.xml'):
         return url        
-    #return url[url.rfind("/")+1:url.rfind(".")]
-    return url[url.rfind("/")+1:-4]
+    return url[url.rfind("/")+1:-4] #return url[url.rfind("/")+1:url.rfind(".")]
+
 
 def GetFileName(url):
+    """
+    Almost the same, but keeps the file extension.
+    """
     if url in [None, 'None', ]:
         return ''
     return url[url.rfind("/")+1:]
 
 def Quote(s):
+    """
+    A wrapper for built-in method `urllib.quote`.
+    """
     return urllib.quote(s, '')
 
 def UnQuote(s):
+    """
+    A wrapper for built-in method `urllib.unquote`.
+    """
     return urllib.unquote(s)
 
 def main():
+    """
+    I use this place for tests.
+    """
 #    url = 'http://identity.datahaven.net:565/sdfsdfsdf/veselin2.xml'
 ##    url = 'ssh://34.67.22.5: 5654 /gfgfg.sdfsdf/sdfsd'
 ##    url = 'q2q://d5wJMQRBYD72V6Zb5aZ1@work.offshore.ai'

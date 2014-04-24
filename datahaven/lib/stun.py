@@ -7,7 +7,18 @@
 #      http://datahaven.net/terms_of_use.html
 #    All rights reserved.
 #
-#
+
+"""
+This is a code to run STUN client to detect external IP of that machine.
+It uses UDP protocol to communicate with public STUN servers.
+After all process of "stunning" IP address is finished you can leave the opened UDP port opened.
+This way external UDP port is not changed and so other users can send us packets to <external IP>:<external PORT>.
+TODO:
+    All this stuff must be simplified.
+    We really do not need to use a real STUN servers.
+    No need to detect a network metric or other info, just detect our external IP:PORT.
+    DHN already have some sort of own stun server, need to use that stuff instead of shtoom code.   
+"""
 
 import sys
 import sets
@@ -43,12 +54,21 @@ _TimeoutTask = None
 #------------------------------------------------------------------------------ 
 
 class IPStunProtocol(shtoom.stun.StunDiscoveryProtocol):
+    """
+    Class to detect external IP address via STUN protocol.
+    """
     datagram_received_callback = None
 
     def stateChanged(self, old, new):
+        """
+        Called when internal state of the process were changed.
+        """
         dhnio.Dprint(4, 'stun.stateChanged [%s]->[%s]' % (old, new))
 
     def finishedStun(self):
+        """
+        Called when the process is finished.
+        """
         local = '0.0.0.0'
         ip = '0.0.0.0'
         port = '0'
@@ -72,17 +92,12 @@ class IPStunProtocol(shtoom.stun.StunDiscoveryProtocol):
                 else:
                     self.result.callback(ip)
             self.result = None
-
-#    def _hostNotResolved(self, x, localAddress):
-#        dhnio.Dprint(2, 'stun.IPStunProtocol._hostNotResolved : %s' % str(x))
-#        if self.timerTask and not self.timerTask.called and not self.timerTask.cancelled:
-#            self.timerTask.cancel()
-#            self.timerTask = None 
-#        if not self._finished:
-#            self._finishedStun()
     
     def datagramReceived(self, dgram, address):
-        # print '    %d bytes from %s' % (len(dgram), str(address)) 
+        """
+        Called when UDP datagram is received.
+        I place a hook here to process datagrams in another place.
+        """
         if self._finished:
             if self.datagram_received_callback is not None:
                 return self.datagram_received_callback(dgram, address)
@@ -102,6 +117,9 @@ class IPStunProtocol(shtoom.stun.StunDiscoveryProtocol):
         return shtoom.stun.StunDiscoveryProtocol.datagramReceived(self, dgram, address)
     
     def refresh(self):
+        """
+        Clear fields to be able to restart the process.
+        """
         self._potentialStuns = {}
         self._stunState = '1'
         self._finished = False
@@ -116,10 +134,21 @@ class IPStunProtocol(shtoom.stun.StunDiscoveryProtocol):
         self.servers = [(host, port) for host, port in shtoom.stun.DefaultServers]
         
     def setCallback(self, cb, arg=None):
+        """
+        Set a callback to get the stun results.
+        """
         self.result.addBoth(cb, arg)
 
 
 def stunExternalIP(timeout=10, verbose=False, close_listener=True, internal_port=5061, block_marker=None):
+    """
+    Start the STUN process.
+        :param timeout: how long to wait before decide that STUN is failed
+        :param verbose: set to True to print more log messages
+        :param close_listener: if True the listener will be closed after STUN is finished
+        :param internal_port: a port number to listen, the external port will be different
+        :param block_marker: you can provide a function if you need to block some other code while STUN is working  
+    """
     global _WorkingDefers
     global _IsWorking
     global _UDPListener
@@ -214,16 +243,25 @@ def stunExternalIP(timeout=10, verbose=False, close_listener=True, internal_port
 
 
 def getUDPListener():
+    """
+    Return a current UDP listener from memory.
+    """
     global _UDPListener
     return _UDPListener
 
 
 def getUDPClient():
+    """
+    Return a current STUN client from memory.
+    """
     global _StunClient
     return _StunClient
 
 
 def stopUDPListener():
+    """
+    Close STUN client and UDP listener.
+    """
     dhnio.Dprint(6, 'stun.stopUDPListener')
     global _UDPListener
     global _StunClient
@@ -239,16 +277,25 @@ def stopUDPListener():
     return result     
 
 def last_stun_time():
+    """
+    Return a last moment when STUN process was started. 
+    """
     global _LastStunTime 
     return _LastStunTime 
 
 def last_stun_result():
+    """
+    Return a results from previous calls.
+    """
     global _LastStunResult
     return _LastStunResult
 
 #------------------------------------------------------------------------------ 
 
 def success(x):
+    """
+    For tests.
+    """
     print x
     if sys.argv.count('continue'):
         reactor.callLater(10, main)
@@ -256,6 +303,9 @@ def success(x):
         reactor.stop()
 
 def fail(x):
+    """
+    For tests.
+    """
     print x
     if sys.argv.count('continue'):
         reactor.callLater(5, main)
@@ -263,6 +313,9 @@ def fail(x):
         reactor.stop()
 
 def main(verbose=False):
+    """
+    For tests.
+    """
     if sys.argv.count('port'):
         d = stunExternalIP(verbose=verbose, close_listener=False, internal_port=int(sys.argv[sys.argv.index('port')+1]))
     else:

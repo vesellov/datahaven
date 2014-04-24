@@ -15,13 +15,15 @@ is not an issue here and we use PacketID that identifies data.
 So we want things like "replace supplier Vincecate"  not "replace supplier 5" 
 where seeing command an extra time would not hurt.
 
-These are the valid values for the command field of a dhnpacket
-    Data/Ack/                 (if customer sends you data you store it) (could be parity packet too)
-    Retrieve/Data|Fail        (data packets returned exactly as is with our signature)
-    ListFiles/Files   (ask supplier to list backup IDs he knows about for us)
-  To DHN
+These are the valid values for the command field of a dhnpacket:
+    - Data/Ack/                 (if customer sends you data you store it) (could be parity packet too)
+    - Retrieve/Data|Fail        (data packets returned exactly as is with our signature)
+    - ListFiles/Files           (ask supplier to list backup IDs he knows about for us)
+    
+To DHN:
     ListContacts/Contacts
-  From DHN
+        
+From DHN:
     NearnessCheck/Nearness
 """
 
@@ -33,11 +35,16 @@ CentralCommandAcks={}
 #------------------------------------------------------------------------------ 
 
 def init():
+    """
+    Initialize a list of valid p2p and central commands.
+    """
     initP2PCommands()
     initCentralCommands()
 
-# These are command strings sent P2P in "command" field of dhnpackets only
 def initP2PCommands():
+    """
+    These are command strings sent P2P in "command" field of dhnpackets only.
+    """
     global P2PCommandAcks
     P2PCommandAcks[Ack()]=NoAck()                         # No Ack for Ack
     P2PCommandAcks[Fail()]=NoAck()                        # No Ack for Fail
@@ -64,8 +71,10 @@ def initP2PCommands():
     
     P2PCommandAcks[Correspondent()]=Correspondent()
 
-#  Next commands are for talking to Central
 def initCentralCommands():
+    """
+    Those commands are for talking to Central server.
+    """
     global CentralCommandAcks
     CentralCommandAcks[Ack()] = NoAck()
     CentralCommandAcks[Register()] = Ack()
@@ -95,8 +104,22 @@ def IsP2PCommand(s):
     Check to see if `s` is a valid p2p command.
     """
     global P2PCommandAcks
+    if len(P2PCommandAcks) == 0:
+        initP2PCommands()
     result = s in P2PCommandAcks
     return result
+
+def IsCentralCommand(s):
+    """
+    Check to see if `s` is a valid Central server command.
+    """
+    global CentralCommandAcks
+    if len(CentralCommandAcks) == 0:
+        initCentralCommands()
+    result = s in CentralCommandAcks
+    return result
+
+#------------------------------------------------------------------------------ 
 
 def AckForCommand(s):
     """
@@ -229,14 +252,6 @@ def Correspondent():
     return "Correspondent"
 
 #------------------------------------------------------------------------------ 
-
-def IsCentralCommand(s):
-    """
-    Check to see if `s` is a valid Central server command.
-    """
-    global CentralCommandAcks
-    result = s in CentralCommandAcks.keys()
-    return result
 
 def Register():
     """

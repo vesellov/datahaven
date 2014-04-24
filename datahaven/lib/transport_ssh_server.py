@@ -9,6 +9,10 @@
 #
 #
 
+"""
+A server side code for transport_ssh.
+"""
+
 import os
 import sys
 

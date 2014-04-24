@@ -746,9 +746,9 @@ def cmd_uninstall(opts, args, overDict):
         return 0
     def do_uninstall():
         dhnio.Dprint(0, 'command_line.do_uninstall')
-        batfilename = misc.MakeBatFileToUninstall()
-        misc.UpdateRegistryUninstall(True)
-        misc.RunBatFile(batfilename, 'c:/out2.txt')
+        # batfilename = misc.MakeBatFileToUninstall()
+        # misc.UpdateRegistryUninstall(True)
+        # misc.RunBatFile(batfilename, 'c:/out2.txt')
     def kill():
         dhnio.Dprint(0, 'kill')
         total_count = 0

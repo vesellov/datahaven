@@ -8,6 +8,15 @@
 #
 #
 
+"""
+This is set of methods to operate with amount of space units. 
+    Examples: 
+        123 bytes
+        45 KB
+        67 mb
+        8.9 Gigabytes
+You can translate values from Kb to Mb or create a good looking string from bytes number.         
+"""
 
 _Suffixes = {
     '':                 1.0,
@@ -40,6 +49,10 @@ _MultiDict = {
 
 
 class DiskSpace:
+    """
+    You can create an object of this class and use it as variable to store amount of space.
+    But in most cases this class is not used, see below global methods in this module. 
+    """
     def __init__(self, v = None, s = '0Mb'):
         if v is None:
             self.v = s
@@ -103,12 +116,28 @@ class DiskSpace:
 
 
 def SuffixIsCorrect(suffix):
+    """
+    Check input string to be a valid unit label. 
+    See global variable `_Suffixes`.
+    """
+    global _Suffixes
     return suffix in _Suffixes.keys()
 
 def SuffixLabels():
+    """
+    Return the correct suffix labels.
+    """
+    global _SuffixLabels
     return _SuffixLabels
 
 def SameSuffix(suf1, suf2):
+    """
+    Compare 2 unit labels. Return True if both are same unit: 
+        >>> from diskspace import *
+        >>> SameSuffix('b','bytes')
+        True
+    """
+    global _Suffixes
     if not SuffixIsCorrect(suf1):
         return False
     if not SuffixIsCorrect(suf2):
@@ -116,15 +145,22 @@ def SameSuffix(suf1, suf2):
     return _Suffixes[suf1] == _Suffixes[suf2]
 
 def MakeString(value, suf):
+    """
+    Method to join value and unit measure.
+    """
     if not SuffixIsCorrect(suf):
         return str(value)
     if round(float(value)) == float(value):
         return str(int(float(value))) + ' ' + suf
     return str(value) + ' ' + suf
 
-# return (number, suffix) or (None, None)
-# "342.67Mb" will return (342.67, "Mb")
 def SplitString(s):
+    """
+    Return tuple (<number>, <suffix>) or (None, None).
+        >>> from diskspace import *
+        >>> SplitString("342.67Mb")
+        (342.67, 'Mb')
+    """
     num = s.rstrip('bytesBYTESgmkGMK ')
     suf = s.lstrip('0123456789., ').strip()
     try:
@@ -140,10 +176,16 @@ def SplitString(s):
 
     return (num, suf)
 
-# Make a correct value with siffix.
-# 123456.789 will return "120.56 Kb"
-# 123.456789 will return "123 bytes"
 def MakeStringFromBytes(value):
+    """
+    Make a correct string value with best units measure from given number of bytes.
+        >>> from diskspace import *
+        >>> MakeStringFromBytes(123456)
+        '120.56 KB'
+        >>> MakeStringFromBytes(123.456789)
+        '123 bytes'
+    I think this is most used method here.
+    """
     try:
         v = float(value)
     except:
@@ -163,17 +205,26 @@ def MakeStringFromBytes(value):
         sz = 'bytes'
     return MakeString(res, sz)
 
-# return total bytes from string with suffix or None
-# "123.456 Mb" will return 129452998.656
 def  GetBytesFromString(s, default=None):
+    """
+    Convert a string to a value in bytes, this is reverse method for MakeStringFromBytes.
+        >>> from diskspace import *
+        >>> GetBytesFromString("123.456 Mb")
+        129452998
+    """
     num, suf = SplitString(s)
     if num is None:
         return default
     return int(num * _Suffixes[suf])
 
-# convert input string to a string with given suffix
-# ("12.345 Mb", "Kb") will return "12641.28 Kb"
 def MakeStringWithSuffix(s, suffix):
+    """
+    You can move strings from one unit measure to another. 
+    Convert input string to a string with given suffix.
+        >>> from diskspace import *
+        >>> MakeStringWithSuffix("12.345 Mb", "Kb")
+        '12641.28 Kb'
+    """
     b = GetBytesFromString(s)
     if b is None:
         return s
@@ -185,12 +236,19 @@ def MakeStringWithSuffix(s, suffix):
     return MakeString(res, suffix)
 
 def GetMegaBytesFromString(s):
+    """
+    This is just a wrapper for `GetBytesFromString`, but return value in Megabytes.
+    """
     b = GetBytesFromString(s)
     if b is None:
         return None
     return round(b/(1024*1024), 2)
 
 def MakeStringFromString(s):
+    """
+    This method can be used during loading or checking user input.
+    Call `SplitString` and than `MakeString` to "recreate" input string.
+    """
     value, suf = SplitString(s)
     if value is None:
         return s

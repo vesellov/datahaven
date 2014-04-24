@@ -9,6 +9,30 @@
 #
 #
 
+"""
+Very important code - this is a most stable protocol in DHN right now.
+Transfer files over TCP protocol.
+
+At least one of users must have opened IP:PORT and second user should be able 
+to connect to him with not problems.
+Both sides will try to keep connection opened so user behind NAT can receive packets too.
+This also allows to send next packets as soon as possible - no need to establish connection again.
+
+Stuff in `p2p.run_upnpc` module can be used to configure port forwarding on user's network router
+and so he can receive packets from everyone and acts like a node with opened IP.
+
+However UPnP is not so great if you have several machines behind single router.
+In my home I have 5 computers (and also iPad). 
+My ASUS WL-500gp router can give me only 32 UPnP records - most of the time they all are busy.
+Skype, torrents, SopCast and other software uses UPnP also.
+I faced several times with situation when I see no free space in the port forwarding table for DHN.
+Need to remove old records or even remove port forwards for Skype or torrent.
+
+So transport_tcp is fine and seems pretty reliable but it is limited in its functionality.
+It is impossible to send to machines in local sub network yet. 
+
+It is also used to send files to identity server, bypass `transport_control`. 
+"""
 
 import os
 import sys

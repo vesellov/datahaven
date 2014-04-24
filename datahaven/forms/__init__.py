@@ -5,7 +5,9 @@ import urllib
 __SENTINEL = object()
 
 def GetParam(tag, param, default=__SENTINEL):
-    """ Convenience function for accessing tag parameters"""
+    """
+    Convenience function for accessing tag parameters.
+    """
     if tag.HasParam(param):
         return tag.GetParam(param)
     else:
@@ -26,8 +28,13 @@ def UnpackParam(s, default=None):
     
 #------------------------------------------------------------------------------ 
 
-import forms.form as form
-import forms.input as input
+try:
+    import forms.form as form
+    import forms.input as input
+except:
+    pass
+
+#------------------------------------------------------------------------------ 
 
 if __name__ == '__main__':
     app = wx.App(False)

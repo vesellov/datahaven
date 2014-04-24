@@ -9,6 +9,10 @@
 #
 #
 
+"""
+A client code for transport_ssh.
+"""
+
 import os
 import sys
 import stat

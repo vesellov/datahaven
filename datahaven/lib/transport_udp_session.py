@@ -9,6 +9,17 @@
 #
 #
 
+"""
+This is a part of transport_udp stuff.
+Handle situations when that machine do have opened IP.
+See `lib.transport_udp` for more details.
+
+The firewall, anti-virus software and especially network routers may block incoming UDP traffic to you. 
+In that case you need to take the initiative and start connecting to remote peer firstly.
+So your NAT router will think that incoming UDP datagrams is just a responses and pass them to you.  
+To be able to receive UDP datagrams from another machine both sides must act simultaneously, at the same time.
+This code is doing that.
+"""
 
 import os
 import sys
@@ -370,6 +381,10 @@ class InboxFile():
 #------------------------------------------------------------------------------ 
 
 class TransportUDPSession(automat.Automat):
+    """
+    A state machine to connect users behind NAT, represent a session with one given remote peer. 
+    See datahaven/documetns/automats.pdf - you can find a transtranport_udp_session page.
+    """
     fast = True
     timers = {'timer-60sec':     (60,    ['PING',]),
               'timer-3min':      (60*10,  ['PING',]),

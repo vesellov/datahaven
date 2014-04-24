@@ -7,6 +7,20 @@
 #    All rights reserved.
 #
 
+"""
+Vertex is a very interesting protocol.
+Allows you to connect 2 users behind NAT using a third machine - a public Q2Q server.
+It is possible to run own Q2Q server - need an open IP so everyone can talk to you.
+User ID is like a email address: veselin@q2qserver.com or alice@datahaven.net.
+It seems Q2Q servers communicate with each other to establish connections.
+Further you can transfer data with no problem - this is a Twisted code!.
+Unfortunately the project is dead and we need to maintain that code.
+At the moment it is turned off, but I would put some work here and revive Vertex code.  
+Search for "vertex q2q" on Google.
+This is a github mirror: 
+    https://github.com/twisted/vertex
+"""
+
 import os
 import sys
 import time

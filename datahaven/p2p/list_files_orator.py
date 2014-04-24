@@ -109,7 +109,7 @@ class ListFilesOrator(Automat):
 
 
 
-def IncommingListFiles(packet):
+def IncomingListFiles(packet):
     global _RequestedListFilesPacketIDs
     global _RequestedListFilesCounter
     _RequestedListFilesCounter += 1
