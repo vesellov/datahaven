@@ -7,6 +7,11 @@
 #    All rights reserved.
 #
 
+"""
+This is a Windows starter process.
+It is used to check and update binaries at start up. 
+"""
+
 import os
 import sys
 import hashlib
@@ -213,7 +218,6 @@ def uninstall():
             try:
                 reg = _winreg.CreateKey(_winreg.HKEY_LOCAL_MACHINE, regpath)
             except:
-                dhnio.DprintException()
                 return False
     
         # check
