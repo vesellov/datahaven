@@ -6,71 +6,17 @@
 #      http://datahaven.net/terms_of_use.html
 #    All rights reserved.
 #
-#This does a bunch of things.  
-#1)  monitor the lists of file sent back from suppliers,
-#    if there is a gap we need to try to fix it
-#    * main class is _BackupMonitor,
-#      it saves the lists of files in _BackupListFiles,
-#      breaks down the lists of files into info on a single backup in _SupplierBackupInfo
-#    * _BlockRebuilder takes care of a single broken block,
-#      request what we have available, builds whatever we can
-#      and stops either when we have fixed everything
-#      or there is nothing more we can do
-#    * _BlockRebuilder requests files through io_throttle and sends out the fixed files
-#      also through io_throttle
-#
-#2)  if a backup is unfixable, not enough information, we delete it CleanupBackups in _BackupMonitor
-#
-#3)  every hour it requests a list of files from each supplier - _hourlyRequestListFiles
-#
-#4)  every hour it tests a file from each supplier,
-#    seeing if they have the data they claim,
-#    and that it is correct
-#    * data is stored in _SuppliersSet and _SupplierRemoteTestResults,
-#    was data good, bad, being rebuilt, or they weren't online 
-#    and we got no data on the result
-#    * if a supplier hasn't been seen in settings.FireInactiveSupplierIntervalHours()
-#    we replace them
-#
-#
-# Strategy for automatic backups
-#
-# 1) Full backup to alternating set of nodes every 2 weeks.
-#
-# 2) Full monthly, then incremental weekly and daily
-#
-# 3) One time full and then incremental monthly, weekly
-#
-# 4) Break alphabetical list of files into N parts and do full
-#    backup on one of those and incrementals on the rest.
-#    So we no longer need part of the incremental history
-#      every time, and after N times older stuff can toss.
-#      so every day is part full and part incremental.  Cool.
-#
-#  Want user to be able to specify what he wants, or at least
-#  select from a few reasonable choices.
-#
-#
-# May just do (1) to start with.
-#
-# This code also wakes up every day and fires off localtester, remotetester
-#   on some reasonable random stuff.
-#
-# This manages the whole thing, so after GUI, this has the highest level control functions.
-#
-# Some competitors let people choose what days to backup on.  Not sure this
-#   is really so great though, once we have incremental.
-#
-# Some can handle partial file changes.  So if a 500 MB mail file only has
-# a little bit appended, only the little bit is backed up.
-#
-# Some competitors can turn the computer off after a backup, but
-# we need it to stay on for P2P stuff.
-#
-# need to record if zip, tar, dump, etc
-#
-# If we do regular full backups often, then we might not bother scrubbing older stuff.
-# Could reduce the bandwidth needed (since scrubbing could use alot.l
+
+"""
+This is a state machine to manage rebuilding process of all backups.
+
+Do several operations periodically:
+    1) ping all suppliers
+    2) request ListFiles from all suppliers
+    3) prepare a list of backups to put some work to rebuild
+    4) run rebuilding process and wait to finish
+    5) make decision to replace one unreliable supplier with fresh one
+"""
 
 
 import os
@@ -88,7 +34,6 @@ except:
 from twisted.internet.defer import Deferred, maybeDeferred
 from twisted.internet import threads
 
-
 import lib.dhnio as dhnio
 import lib.misc as misc
 import lib.nameurl as nameurl
@@ -99,7 +44,6 @@ import lib.tmpfile as tmpfile
 import lib.diskspace as diskspace
 import lib.automat as automat
 import lib.automats as automats
-
 
 import backup_rebuilder
 import fire_hire
@@ -112,11 +56,16 @@ import backup_fs
 import backup_control
 import central_service
 
+#------------------------------------------------------------------------------ 
+
 _BackupMonitor = None
 
 #------------------------------------------------------------------------------ 
 
 def A(event=None, arg=None):
+    """
+    Access method to interact with the state machine.
+    """
     global _BackupMonitor
     if _BackupMonitor is None:
         _BackupMonitor = BackupMonitor('backup_monitor', 'READY', 4)
@@ -126,6 +75,10 @@ def A(event=None, arg=None):
 
 
 class BackupMonitor(automat.Automat):
+    """
+    A class to monitor backups and manage rebuilding process.
+    """
+    
     timers = {'timer-1sec':   (1,       ['RESTART', 'PING']), 
               'timer-10sec':  (20,      ['PING']),
               # 'timer-10min':  (10*60,   ['READY']), 
@@ -135,9 +88,15 @@ class BackupMonitor(automat.Automat):
     lastRequestSuppliersTime = 0
 
     def state_changed(self, oldstate, newstate):
+        """
+        This method is called every time when my state is changed. 
+        """
         automats.set_global_state('MONITOR ' + newstate)
 
     def A(self, event, arg):
+        """
+        The state machine code, generated using visio2python tool.
+        """
         #---READY---
         if self.state is 'READY':
             if event == 'init' :
@@ -294,11 +253,17 @@ class BackupMonitor(automat.Automat):
         return backup_control.HasRunningBackup()
 
 def Restart():
+    """
+    Just sends a "restart" event to the state machine.
+    """
     dhnio.Dprint(4, 'backup_monitor.Restart')
     A('restart')
 
 
 def shutdown():
+    """
+    Called from high level modules to finish all things correctly.
+    """
     dhnio.Dprint(4, 'backup_monitor.shutdown')
     automat.clear_object(A().index)
 

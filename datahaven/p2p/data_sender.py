@@ -7,6 +7,15 @@
 #    All rights reserved.
 #
 
+"""
+A state machine to manage data sending process, acts very simple:
+    1) when new local data is created it tries to send it to needed supplier
+    2) wait while `p2p.io_throttle` is doing some data transmission to remote suppliers
+    3) calls `p2p.backup_matrix.ScanBlocksToSend()` to get a list of pieces needs to be send 
+    4) this machine is restarted every minute to try to send the data ASAP
+    5) also can be restarted at any time when other code decides that    
+"""
+
 import os
 import sys
 import time
@@ -33,12 +42,17 @@ import fire_hire
 import contact_status
 import backup_monitor
 
+#------------------------------------------------------------------------------ 
+
 _DataSender = None
 _ShutdownFlag = False
 
 #------------------------------------------------------------------------------ 
 
 def A(event=None, arg=None):
+    """
+    Access method to interact with the state machine.
+    """
     global _DataSender
     if _DataSender is None:
         _DataSender = DataSender('data_sender', 'READY', 6)
@@ -48,6 +62,10 @@ def A(event=None, arg=None):
 
 
 class DataSender(automat.Automat):
+    """
+    A class to manage process of sending data packets to remote suppliers.
+    """
+    
     timers = {'timer-1min':     (60,     ['READY']),
               'timer-1sec':     (1,      ['SENDING'])
               }
@@ -133,8 +151,8 @@ class DataSender(automat.Automat):
                             packetID, 
                             supplier_idurl, 
                             misc.getLocalID(), 
-                            self.packetAcked, 
-                            self.packetFailed)
+                            self._packetAcked, 
+                            self._packetFailed)
                         log.write('io_throttle.QueueSendFile %s\n' % packetID)
                         # dhnio.Dprint(6, '  %s for %s' % (packetID, backupID))
         self.automat('scan-done')
@@ -179,7 +197,7 @@ class DataSender(automat.Automat):
         dhnio.Dprint(8, 'data_sender.doRemoveUnusedFiles %d files were removed' % count)
         backup_matrix.ReadLocalFiles()
                          
-    def packetAcked(self, packet, ownerID, packetID):
+    def _packetAcked(self, packet, ownerID, packetID):
         backupID, blockNum, supplierNum, dataORparity = packetid.BidBnSnDp(packetID)
         backup_matrix.RemoteFileReport(backupID, blockNum, supplierNum, dataORparity, True)
         if not self.statistic.has_key(ownerID):
@@ -187,7 +205,7 @@ class DataSender(automat.Automat):
         self.statistic[ownerID][0] += 1
         self.automat('block-acked', (ownerID, packetID))
     
-    def packetFailed(self, remoteID, packetID, why):
+    def _packetFailed(self, remoteID, packetID, why):
         backupID, blockNum, supplierNum, dataORparity = packetid.BidBnSnDp(packetID)
         backup_matrix.RemoteFileReport(backupID, blockNum, supplierNum, dataORparity, False)
         if not self.statistic.has_key(remoteID):
@@ -197,12 +215,19 @@ class DataSender(automat.Automat):
 
 
 def statistic():
+    """
+    The `data_sender()` keeps track of sending results with every supplier.
+    This is used by `fire_hire()` to decide how reliable is given supplier.
+    """
     global _DataSender
     if _DataSender is None:
         return {}
     return _DataSender.statistic
     
 def SetShutdownFlag():
+    """
+    Set flag to indicate that no need to send anything anymore.
+    """
     global _ShutdownFlag
     _ShutdownFlag = True
         

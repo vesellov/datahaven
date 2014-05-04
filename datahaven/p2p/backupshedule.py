@@ -9,6 +9,11 @@
 #
 #
 
+"""
+A set of methods to run backups at given intervals, used to provide scheduled backups. 
+TODO:   need to turn on this module, it is switched off during last "big changes".
+        many things was changed since that moment, so need to put some work here 
+"""
 
 import os
 import sys

@@ -314,10 +314,11 @@ class restore(automat.Automat):
     
     def doWriteRestoredData(self, arg):
         NewBlock = arg[0]
-        SessionKey = dhncrypto.DecryptLocalPK(NewBlock.EncryptedSessionKey)
-        paddeddata = dhncrypto.DecryptWithSessionKey(SessionKey, NewBlock.EncryptedData)
-        newlen = int(NewBlock.Length)
-        data = paddeddata[:newlen]
+        # SessionKey = dhncrypto.DecryptLocalPK(NewBlock.EncryptedSessionKey)
+        # paddeddata = dhncrypto.DecryptWithSessionKey(SessionKey, NewBlock.EncryptedData)
+        # newlen = int(NewBlock.Length)
+        # data = paddeddata[:newlen]
+        data = NewBlock.Data()
         # Add to the file where all the data is going
         try:
             # self.File.write(data)

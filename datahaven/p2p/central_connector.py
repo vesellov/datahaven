@@ -8,6 +8,20 @@
 #
 #
 
+"""
+The central_connector() is needed to manage communications with Central server.
+
+I am going to replace Central server database with DHT, 
+but right now users still need to contact Central server to get suppliers and customers.
+
+Automat will perform several operations:
+    1) send my identity to the Central server to start connection
+    2) send my settings to notify Central server about my requirements
+    3) request a list of my suppliers when needed
+    4) request my settings from Central server
+    5) request receipts to keep track of my balance 
+"""
+
 import os
 import sys
 
@@ -15,12 +29,9 @@ try:
     from twisted.internet import reactor
 except:
     sys.exit('Error initializing twisted.internet.reactor in central_connector.py')
-from twisted.internet.defer import Deferred, maybeDeferred
-from twisted.internet.task import LoopingCall
 
 
 import lib.dhnio as dhnio
-import lib.misc as misc
 import lib.packetid as packetid
 import lib.settings as settings
 import lib.contacts as contacts
@@ -38,12 +49,16 @@ import central_service
 import dhnicon
 import money
 
+#------------------------------------------------------------------------------ 
 
 _CentralConnector = None
 
 #------------------------------------------------------------------------------ 
 
 def A(event=None, arg=None):
+    """
+    Access method to interact with the state machine.
+    """
     global _CentralConnector
     if _CentralConnector is None:
         _CentralConnector = CentralConnector('central_connector', 'AT_STARTUP', 4)
@@ -52,6 +67,10 @@ def A(event=None, arg=None):
     return _CentralConnector
 
 class CentralConnector(Automat):
+    """
+    A class to communicate with Central server.
+    """
+    
     timers = {'timer-1hour':  (60*60, ['CONNECTED', 'DISCONNECTED', 'ONLY_ID']),
               'timer-30sec':  (30,    ['IDENTITY', 'REQUEST_SETTINGS', 'SETTINGS', 'SUPPLIERS', 'DISCONNECTED']),
               'timer-10sec':  (10,    ['IDENTITY'])}

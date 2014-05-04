@@ -7,21 +7,24 @@
 #      http://datahaven.net/terms_of_use.html
 #    All rights reserved.
 #
-#
-#  This interfaces between a pipe from something like tar and the twisted code
-#    for rest of DataHaven.NET
-#  We see how many packets are waiting to be sent,
-#    and if it is not too many, and we can make more, we make some more.
-#
-#  Main idea:
-#     1) When a backup is started a backup object is created
-#     2) We get a file descriptor for the process creating the tar archive
-#     3) We always use select/poll before reading so we never block
-#     4) We also poll to see if more needed.
-#     5) We number/name blocks so can be sure what is what when we read back later
-#     6) We call raidmake to split block and make parities
-#     7) We put parts into dhnpackets and give these to transport_control
 
+"""
+The core module.
+The backup() state machine is doing a bunch of things to create a single backup.
+
+Here is an interfaces between a pipe from something like tar 
+and the twisted code for rest of DataHaven.NET.
+
+Main idea:
+   1) when a backup is started a backup object is created
+   2) get a file descriptor for the process creating the tar archive
+   3) always use select/poll before reading, so never block the main process
+   4) also poll to see if more data is needed to create a block
+   5) number/name blocks so can be sure what is what when we read back later
+   6) encrypt the block data into `dhnblocks` 
+   7) call `p2p.raidmake` to split block and make "Parity" packets (pieces of block)
+   8) notify the top level code about new pieces of data to send on suppliers
+"""
 
 import os
 import sys
@@ -65,6 +68,10 @@ import events
 #-------------------------------------------------------------------------------
 
 class backup(automat.Automat):
+    """
+    A class to run the backup process, data is read from pipe. 
+    """
+    
     timers = {'timer-01sec':    (0.1, ['RUN', 'READ']),} 
     
     def __init__(self, backupID, pipe, finishCallback=None, blockResultCallback=None, blockSize=None,): #  resultDeferred=None
@@ -91,6 +98,9 @@ class backup(automat.Automat):
         # dhnio.Dprint(6, 'backup.__init__ %s %s %d' % (self.backupID, self.eccmap, self.blockSize,))
 
     def abort(self):
+        """
+        This method should stop this backup by killing the pipe process.
+        """
         dhnio.Dprint(4, 'backup.abort id='+str(self.backupID))
         self.ask4abort = True
         try:
@@ -101,6 +111,9 @@ class backup(automat.Automat):
     #------------------------------------------------------------------------------ 
         
     def A(self, event, arg):
+        """
+        The state machine code, generated using visio2python tool.
+        """
         #---AT_STARTUP---
         if self.state is 'AT_STARTUP':
             if event == 'init' :

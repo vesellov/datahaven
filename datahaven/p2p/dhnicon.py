@@ -9,6 +9,11 @@
 #
 #
 
+"""
+Uses wxPython to show tray icon for DataHaven.NET.
+This is working inside `dhnmain` process, uses wxreactor to connect with main Twisted loop.
+"""
+
 import os
 import sys
 

@@ -8,6 +8,12 @@
 #    All rights reserved.
 #
 
+"""
+A state machine and several extra methods to keep track of current users's online state.
+To do p2p communications need to know who is available and who is not.
+A one instance of `contact_status()` machine is created for every remote contact and monitor his status. 
+"""
+
 import os
 import sys
 import time
@@ -42,6 +48,9 @@ _ShutdownFlag = False
 
 
 def init():
+    """
+    Needs to be called before other methods here.
+    """
     dhnio.Dprint(4, 'contact_status.init')
     transport_control.AddInboxCallback(Inbox)
     transport_control.AddOutboxCallback(Outbox)
@@ -54,6 +63,9 @@ def init():
 
 
 def shutdown():
+    """
+    Called from top level code when the software is finishing.
+    """
     dhnio.Dprint(4, 'contact_status.shutdown')
     global _ShutdownFlag
     global _ContactsStatusDict
@@ -64,6 +76,9 @@ def shutdown():
     
 
 def isOnline(idurl):
+    """
+    Return True if given contact's state is ONLINE.
+    """
     global _ShutdownFlag
     if _ShutdownFlag:
         return False
@@ -76,6 +91,9 @@ def isOnline(idurl):
 
 
 def isOffline(idurl):
+    """
+    Return True if given contact's state is OFFLINE.
+    """
     global _ShutdownFlag
     if _ShutdownFlag:
         return True
@@ -88,6 +106,9 @@ def isOffline(idurl):
 
 
 def hasOfflineSuppliers():
+    """
+    Loops all suppliers and check their state, return True if at least one is OFFLINE.
+    """
     for idurl in contacts.getSupplierIDs():
         if isOffline(idurl):
             return True
@@ -95,6 +116,9 @@ def hasOfflineSuppliers():
 
 
 def countOfflineAmong(idurls_list):
+    """
+    Loops all IDs in `idurls_list` and count how many is OFFLINE.
+    """
     num = 0
     for idurl in idurls_list:
         if isOffline(idurl):
@@ -102,6 +126,9 @@ def countOfflineAmong(idurls_list):
     return num
 
 def countOnlineAmong(idurls_list):
+    """
+    Loops all IDs in `idurls_list` and count how many is ONLINE.
+    """
     num = 0
     for idurl in idurls_list:
         if idurl:
@@ -111,13 +138,10 @@ def countOnlineAmong(idurls_list):
 
 #------------------------------------------------------------------------------ 
 
-#def check_contacts(contacts_list):
-#    for idurl in contacts_list:
-#        if idurl:
-#            A(idurl, 'check') 
-
-
 def A(idurl, event=None, arg=None):
+    """
+    Access method to interact with a state machine created for given contact.
+    """
     global _ShutdownFlag
     global _ContactsStatusDict
     if not _ContactsStatusDict.has_key(idurl):
@@ -130,6 +154,10 @@ def A(idurl, event=None, arg=None):
       
 
 class ContactStatus(automat.Automat):
+    """
+    A class to keep track of user's online status.
+    """
+    
     timers = {
         'timer-20sec': (20.0, ['PING', 'ACK?']),
         }
@@ -208,6 +236,10 @@ class ContactStatus(automat.Automat):
 #------------------------------------------------------------------------------ 
 
 def OutboxStatus(workitem, proto, host, status, error, message):
+    """
+    This method is called from `lib.transport_control` when got a status report after 
+    sending a packet to remote peer. If packet sent was failed - user seems to be OFFLINE.   
+    """
     if status == 'finished':
         A(workitem.remoteid, 'sent-done', (workitem, proto, host))
     else:
@@ -215,19 +247,35 @@ def OutboxStatus(workitem, proto, host, status, error, message):
 
 
 def Inbox(newpacket, proto, host):
+    """
+    This is called when some `dhnpacket` was received from remote peer - user seems to be ONLINE.
+    """
     A(newpacket.OwnerID, 'inbox-packet', (newpacket, proto, host))
     ratings.remember_connected_time(newpacket.OwnerID)
     
 
 def Outbox(outpacket):
+    """
+    Called when some `dhnpacket` is placed in the sending queue.
+    This packet can be our Identity packet - this is a sort of PING operation 
+    to try to connect with that man.    
+    """
     A(outpacket.RemoteID, 'outbox-packet', outpacket)
 
 
 def FileSent(workitem, args):
+    """
+    This is called when transport_control starts the file transfer to some peer.
+    Used to count how many times you PING him.
+    """
     A(workitem.remoteid, 'file-sent', (workitem, args))
 
 
 def PacketSendingTimeout(remoteID, packetID):
+    """
+    Called from `p2p.io_throttle` when some packet is timed out.
+    Right now this do nothing, state machine ignores that event.
+    """
     # dhnio.Dprint(6, 'contact_status.PacketSendingTimeout ' + remoteID)
     A(remoteID, 'sent-timeout', packetID)
 

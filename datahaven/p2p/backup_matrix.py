@@ -7,6 +7,30 @@
 #    All rights reserved.
 #
 
+"""
+The software stores all backup IDs in the memory.
+Also we need to keep track of every piece of data.
+I have a matrix for every backup: blocks by suppliers.
+Every cell in the matrix store short info about single piece (file) of your data.
+
+There are two types of matrix: 
+    1) "remote files"
+    2) "local files"
+    
+A "remote" matrix keeps info about files stored on your suppliers.
+They will report this info to you in the command "ListFiles".
+
+A "local" matrix keeps info about local files stored on your machine.
+When you doing a backup you create a two copies of your data.
+At first it will be stored on your local HDD and then transferred to suppliers.
+
+The local and remote copies of your data is absolutely equal, have same structure and dimension.
+
+Local files can be removed as soon as corresponding remote files gets delivered to suppliers.
+But local files is needed to rebuild the data - the "Parity" pieces is used in the RAID code 
+to reconstruct "Data" pieces. So need to keep track of both "surfaces".
+"""
+
 import os
 import sys
 import time
@@ -68,6 +92,12 @@ _RepaintingTaskDelay = 2.0
 #------------------------------------------------------------------------------ 
 
 def init():
+    """
+    Call this method before all others here. Prepare several things here:
+        - start a loop to repaint the GUI when needed
+        - scan local files and build the "local" matrix
+        - read latest (stored on local disk) ListFiles for suppliers to build "remote" matrix     
+    """
     dhnio.Dprint(4, 'backup_matrix.init')
     RepaintingProcess(True)
     ReadLocalFiles()
@@ -75,66 +105,113 @@ def init():
 
 
 def shutdown():
+    """
+    Correct way to finish all things here.
+    """
     dhnio.Dprint(4, 'backup_matrix.shutdown')
     RepaintingProcess(False)
 
 #------------------------------------------------------------------------------ 
 
-# index for all remote files (on suppliers HDD's) stored in dictionary
-# values are -1, 0 or 1 - this mean file is missing, no info yet, or its existed 
-# all entries are indexed by [backupID][blockNum]['D' or 'P'][supplierNum]
 def remote_files():
+    """
+    This is a "remote" matrix.
+    Here is stored info for all remote files (on suppliers HDD's) 
+    stored in dictionary. The values are integers:
+        - -1 : this mean file is missing
+        -  0 : no info comes yet 
+        -  1 : this file exist on given remote machine
+
+    This is a dictionary of dictionaries of dictionaries of lists. :-)))  
+    Values can be accessed this way: 
+ 
+        remote_files()[backupID][blockNumber][dataORparity][supplierNumber]
+        
+        - backupID - a unique identifier of that backup, see `lib.packetid` module
+        - blockNumber - a number of block started from 0, look at `p2p.backup`
+        - dataORparity - can be 'D' for Data packet or 'P' for Parity packets 
+        - supplierNumber - who should keep that piece? 
+    """
     global _RemoteFiles
     return _RemoteFiles
 
 
-# max block number for every remote backup ID
 def remote_max_block_numbers():
+    """
+    This is a dictionary to store max block number for every remote backup, by backup ID.
+    """
     global _RemoteMaxBlockNumbers
     return _RemoteMaxBlockNumbers
 
 
-# index for all local files (on our HDD) stored in dictionary
-# values are 0 or 1 - this mean file exist or not 
-# all entries are indexed by [backupID][blockNum]['D' or 'P'][supplierNum]
 def local_files():
+    """
+    This is a "local" matrix, same structure like `remote_files()`. 
+    Keeps info for all local files stored on your HDD.
+    The values are integers: 0 or 1 (local file exists or not). 
+    """
     global _LocalFiles
     return _LocalFiles
 
 
-# max block number for every local backup ID
 def local_max_block_numbers():
+    """
+    Dictionary to store max block number for every local backup.
+    """
     global _LocalMaxBlockNumbers
     return _LocalMaxBlockNumbers
 
 
 def local_backup_size():
+    """
+    The pieces can have different sizes. 
+    To get the size of the particular backup need to count size of all pieces.
+    Here is a dictionary of counters for every backup. 
+    """
     global _LocalBackupSize
     return _LocalBackupSize
 
 
-# currently working backups (started from dobackup.py)
-def backups_in_process():
-    global _BackupsInProcess
-    return _BackupsInProcess
-
-
 def suppliers_set():
+    """
+    Return current set of suppliers, see `SuppliersSet` class.
+    PREPRO: Not sure do we need to duplicate suppliers IDs.
+            In `lib.contactsdb` we already store this list.
+            However scrubbers need to keep track of other suppliers also ...
+    """
     global _SuppliersSet
     if _SuppliersSet is None:
         _SuppliersSet = SuppliersSet(contacts.getSupplierIDs())
     return _SuppliersSet
 
 #------------------------------------------------------------------------------ 
-# this should represent the set of suppliers for either the user or for a customer the user
-# is acting as a scrubber for
 class SuppliersSet:
+    """
+    This should represent a set of suppliers for either the user 
+    or for a customer the user is acting as a scrubber for.
+    """
     def __init__(self, supplierList):
+        """
+        Set initial list of suppliers, `supplierList` is an array with suppliers IDURL's.
+        """
         self.suppliers = [] 
         self.supplierCount = 0 
         self.UpdateSuppliers(supplierList)
 
+    def UpdateSuppliers(self, supplierList):
+        """
+        Called when your suppliers is changed and need to update current set of suppliers.
+        Right now this list comes from Central server.
+        """
+        self.suppliers = supplierList
+        self.supplierCount = len(self.suppliers)
+
     def GetActiveArray(self):
+        """
+        Loops all suppliers in the set and returns who is alive at the moment.
+        Return a list with integers: 0 for offline suppler and 1 if he is available right now.
+        Uses `p2p.contact_status.isOnline()` to see the current state of supplier.
+        """
         activeArray = [0] * self.supplierCount
         for i in xrange(self.supplierCount):
             if not self.suppliers[i]:
@@ -146,6 +223,12 @@ class SuppliersSet:
         return activeArray
 
     def ChangedArray(self, supplierList):
+        """
+        Loops all suppliers in the set and compare with `supplierList`.
+        Return two lists:
+            - array with integers where value 1 means that supplier is different
+            - list of different user IDs
+        """
         changedArray = [0] * self.supplierCount
         changedIdentities = []
         for i in xrange(self.supplierCount):
@@ -157,6 +240,9 @@ class SuppliersSet:
         return changedArray, changedIdentities
 
     def SuppliersChanged(self, supplierList):
+        """
+        Return True if at least one from current set of suppliers is different from `supplierList`.
+        """
         if len(supplierList) != self.supplierCount:
             return True
         for i in xrange(self.supplierCount):
@@ -166,8 +252,11 @@ class SuppliersSet:
                 return True
         return False
 
-    # if suppliers 1 and 3 changed, return [1,3]
     def SuppliersChangedNumbers(self, supplierList):
+        """
+        Return list of possitions of changed suppliers,
+        say if suppliers 1 and 3 were changed it should return [1,3].
+        """
         changedList = []
         for i in xrange(self.supplierCount):
             if not self.suppliers[i]:
@@ -177,18 +266,20 @@ class SuppliersSet:
         return changedList
 
     def SupplierCountChanged(self, supplierList):
+        """
+        Return True if number of suppliers were changed.
+        """
         if len(supplierList) != self.supplierCount:
             return True
         else:
             return False
 
-    def UpdateSuppliers(self, supplierList):
-        self.suppliers = supplierList
-        self.supplierCount = len(self.suppliers)
-
 #------------------------------------------------------------------------------ 
 
 def SaveLatestRawListFiles(idurl, listFileText):
+    """
+    Save a ListFiles packet from given supplier on local HDD.
+    """
     supplierPath = settings.SupplierPath(idurl)
     if not os.path.isdir(supplierPath):
         try:
@@ -200,15 +291,23 @@ def SaveLatestRawListFiles(idurl, listFileText):
 
 
 def ReadRawListFiles(supplierNum, listFileText):
-    # all lines are something like that
-    # Findex
-    # D0
-    # D0/1 
-    # V0/1/F20090709034221PM 3 0-1000
-    # V0/1/F20090709034221PM 3 0-1000
-    # D0/0/123/4567
-    # V0/0/123/4567/F20090709034221PM 3 0-11 missing Data:1,3
-    # V0/0/123/4/F20090709012331PM 3 0-5 missing Data:1,3 Parity:0,1,2
+    """
+    Read ListFiles packet for given supplier and build a "remote" matrix.
+    All lines are something like that:
+        Findex
+        D0
+        D0/1 
+        V0/1/F20090709034221PM 3 0-1000
+        V0/1/F20090709034221PM 3 0-1000
+        D0/0/123/4567
+        V0/0/123/4567/F20090709034221PM 3 0-11 missing Data:1,3
+        V0/0/123/4/F20090709012331PM 3 0-5 missing Data:1,3 Parity:0,1,2
+        
+    First character can be: 
+        - "F" for files
+        - "D" for folders
+        - "V" for backed up data 
+    """
     backups2remove = set()
     paths2remove = set()
     oldfiles = ClearSupplierRemoteInfo(supplierNum)
@@ -340,6 +439,9 @@ def ReadRawListFiles(supplierNum, listFileText):
             
 
 def ReadLatestRawListFiles():
+    """
+    Call `ReadRawListFiles()` for every local file we have on hands and build whole "remote" matrix.
+    """
     dhnio.Dprint(4, 'backup_matrix.ReadLatestRawListFiles')
     for idurl in contacts.getSupplierIDs():
         if idurl:
@@ -350,6 +452,9 @@ def ReadLatestRawListFiles():
                     ReadRawListFiles(contacts.numberForSupplier(idurl), listFileText)
 
 def ReadLocalFiles():
+    """
+    This method scans local backups and build the whole "local" matrix.
+    """
     global _LocalFilesNotifyCallback
     local_files().clear()
     local_max_block_numbers().clear()
@@ -396,6 +501,11 @@ def ReadLocalFiles():
 #------------------------------------------------------------------------------ 
 
 def RemoteFileReport(backupID, blockNum, supplierNum, dataORparity, result):
+    """
+    Writes info for a single piece of data into "remote" matrix.
+    May be called when you got an Ack packet from remote supplier 
+    after you sent him some Data packet. 
+    """
     blockNum = int(blockNum)
     supplierNum = int(supplierNum)
     if supplierNum > suppliers_set().supplierCount:
@@ -424,6 +534,13 @@ def RemoteFileReport(backupID, blockNum, supplierNum, dataORparity, result):
 
 
 def LocalFileReport(packetID=None, backupID=None, blockNum=None, supplierNum=None, dataORparity=None):
+    """
+    Writes info for a single piece of data into "local" matrix.
+    You can use two forms:
+        - pass `packetID` parameter only
+        - pass all other parameters and do not use `packetID`
+    This is called when new local file created, for example during rebuilding process. 
+    """
     if packetID is not None:
         backupID, blockNum, supplierNum, dataORparity = packetid.Split(packetID)  
         if backupID is None:
@@ -466,6 +583,9 @@ def LocalFileReport(packetID=None, backupID=None, blockNum=None, supplierNum=Non
 
 
 def LocalBlockReport(newblock, num_suppliers):
+    """
+    This updates "local" matrix - a several pieces corresponding to given block of data.
+    """
     if suppliers_set().supplierCount != num_suppliers:
         dhnio.Dprint(6, 'backup_matrix.LocalBlockReport %s skipped, because number of suppliers were changed' % str(newblock))
         return
@@ -502,6 +622,11 @@ def LocalBlockReport(newblock, num_suppliers):
 #------------------------------------------------------------------------------ 
 
 def ScanMissingBlocks(backupID):
+    """
+    Finally here is some real logic.
+    This will compare both matrixes to find missing pieces on remote suppliers.
+    Should return a list of numbers of missed blocks for given backup. 
+    """
     missingBlocks = set()
     localMaxBlockNum = local_max_block_numbers().get(backupID, -1)
     remoteMaxBlockNum = remote_max_block_numbers().get(backupID, -1)
@@ -559,6 +684,10 @@ def ScanMissingBlocks(backupID):
     return list(missingBlocks)
 
 def ScanBlocksToRemove(backupID, check_all_suppliers=True):
+    """
+    This method compare both matrixes and found pieces which is present on both sides.
+    If remote supplier got that file it can be removed from the local HDD.  
+    """
     dhnio.Dprint(10, 'backup_matrix.ScanBlocksToRemove for %s' % backupID)
     packets = []
     localMaxBlockNum = local_max_block_numbers().get(backupID, -1)
@@ -599,6 +728,9 @@ def ScanBlocksToRemove(backupID, check_all_suppliers=True):
     return packets
 
 def ScanBlocksToSend(backupID):
+    """
+    Opposite method - search for pieces which is not yet delivered to remote suppliers. 
+    """
     if '' in suppliers_set().suppliers:
         return {} 
     localMaxBlockNum = local_max_block_numbers().get(backupID, -1)
@@ -635,11 +767,17 @@ def ScanBlocksToSend(backupID):
 #------------------------------------------------------------------------------ 
 
 def RepaintBackup(backupID): 
+    """
+    Mark given backup to be "repainted" in the GUI during the next "frame".
+    """
     global _UpdatedBackupIDs
     _UpdatedBackupIDs.add(backupID)
 
 
 def RepaintingProcess(on_off):
+    """
+    This method is called in loop to repaint the GUI.
+    """
     global _UpdatedBackupIDs
     global _BackupStatusNotifyCallback
     global _RepaintingTask
@@ -652,6 +790,9 @@ def RepaintingProcess(on_off):
                 _RepaintingTask = None
                 _UpdatedBackupIDs.clear()
                 return
+    # TODO:
+    # Need to optimize that - do not call in loop!
+    # Just make a single call and pass _UpdatedBackupIDs as param.
     for backupID in _UpdatedBackupIDs:
         if _BackupStatusNotifyCallback is not None:
             _BackupStatusNotifyCallback(backupID)
@@ -665,12 +806,18 @@ def RepaintingProcess(on_off):
 #------------------------------------------------------------------------------ 
 
 def EraseBackupRemoteInfo(backupID): 
+    """
+    Clear info only for given backup from "remote" matrix.
+    """
     if remote_files().has_key(backupID):
         del remote_files()[backupID] # remote_files().pop(backupID)
     if remote_max_block_numbers().has_key(backupID):
         del remote_max_block_numbers()[backupID]
         
 def EraseBackupLocalInfo(backupID):
+    """
+    Clear info only for given backup from "local" matrix.
+    """
     if local_files().has_key(backupID):
         del local_files()[backupID] # local_files().pop(backupID)
     if local_max_block_numbers().has_key(backupID):
@@ -681,15 +828,24 @@ def EraseBackupLocalInfo(backupID):
 #------------------------------------------------------------------------------ 
 
 def ClearLocalInfo():
+    """
+    Completely clear the whole "local" matrix.
+    """
     local_files().clear()
     local_max_block_numbers().clear()
     local_backup_size().clear()
 
 def ClearRemoteInfo():
+    """
+    Completely clear the whole "remote" matrix, in other words - forget all info about suppliers files.
+    """
     remote_files().clear()
     remote_max_block_numbers().clear()
     
 def ClearSupplierRemoteInfo(supplierNum):
+    """
+    Clear only "single column" in the "remote" matrix corresponding to given supplier. 
+    """
     files = 0
     for backupID in remote_files().keys():
         for blockNum in remote_files()[backupID].keys():
@@ -704,6 +860,9 @@ def ClearSupplierRemoteInfo(supplierNum):
 #------------------------------------------------------------------------------ 
 
 def GetBackupStats(backupID):
+    """
+    Collect needed info from "remote" matrix and create a detailed report about given backup.
+    """
     if not remote_files().has_key(backupID):
         return 0, 0, [(0, 0)] * suppliers_set().supplierCount
     percentPerSupplier = 100.0 / suppliers_set().supplierCount
@@ -732,8 +891,12 @@ def GetBackupStats(backupID):
     return totalNumberOfFiles, maxBlockNum, statsArray
 
 
-# return totalPercent, totalNumberOfFiles, totalSize, maxBlockNum, statsArray
 def GetBackupLocalStats(backupID):
+    """
+    Provide detailed info about local files for that backup.
+    Return a tuple: 
+        (totalPercent, totalNumberOfFiles, totalSize, maxBlockNum, statsArray)
+    """
     # ??? maxBlockNum = local_max_block_numbers().get(backupID, -1)
     maxBlockNum = GetKnownMaxBlockNum(backupID)
     if not local_files().has_key(backupID):
@@ -767,6 +930,9 @@ def GetBackupLocalStats(backupID):
 
 
 def GetBackupBlocksAndPercent(backupID):
+    """
+    Another method to get details about a backup.
+    """
     if not remote_files().has_key(backupID):
         return 0, 0
     # get max block number
@@ -785,8 +951,17 @@ def GetBackupBlocksAndPercent(backupID):
     # +1 since zero based and *0.5 because Data and Parity
     return maxBlockNum + 1, 100.0 * 0.5 * fileCounter / ((maxBlockNum + 1) * suppliers_set().supplierCount)
 
-# return : blocks, percent, weak block, weak percent
+
 def GetBackupRemoteStats(backupID, only_available_files=True):
+    """
+    This method found a most "weak" block of that backup, 
+    this is a block which pieces is kept by less suppliers from all other blocks.
+    This is needed to detect the whole backup availability.
+    Because if you loose at least one block of the backup - you will loose the whole backup.!
+    The backup condition is equal to the "worst" block condition.
+    Return a tuple:
+        (blocks, percent, weakBlock, weakBlockPercent)
+    """
     if not remote_files().has_key(backupID):
         return 0, 0, 0, 0
     # get max block number
@@ -825,6 +1000,9 @@ def GetBackupRemoteStats(backupID, only_available_files=True):
 
 
 def GetBackupRemoteArray(backupID):
+    """
+    Get info for given backup from "remote" matrix. 
+    """
     if not remote_files().has_key(backupID):
         return None
     maxBlockNum = GetKnownMaxBlockNum(backupID)
@@ -834,6 +1012,9 @@ def GetBackupRemoteArray(backupID):
 
 
 def GetBackupLocalArray(backupID):
+    """
+    Get info for given backup from "local" matrix. 
+    """
     if not local_files().has_key(backupID):
         return None
     maxBlockNum = GetKnownMaxBlockNum(backupID)
@@ -843,6 +1024,10 @@ def GetBackupLocalArray(backupID):
         
     
 def GetBackupIDs(remote=True, local=False, sorted_ids=False):
+    """
+    Return a list of backup IDs which is present in the matrixes.
+    You can choose which matrix to use. 
+    """
     s = set()
     if remote:
         s.update(remote_files().keys())
@@ -854,11 +1039,17 @@ def GetBackupIDs(remote=True, local=False, sorted_ids=False):
 
 
 def GetKnownMaxBlockNum(backupID):
+    """
+    Return a maximum "known" block number for given backup.
+    """
     return max(remote_max_block_numbers().get(backupID, -1), 
                local_max_block_numbers().get(backupID, -1))
 
 
 def GetLocalDataArray(backupID, blockNum):
+    """
+    Get "local" info for a single block of given backup, this is for "Data" surface.  
+    """
     if not local_files().has_key(backupID):
         return [0] * suppliers_set().supplierCount
     if not local_files()[backupID].has_key(blockNum):
@@ -867,6 +1058,9 @@ def GetLocalDataArray(backupID, blockNum):
 
 
 def GetLocalParityArray(backupID, blockNum):
+    """
+    Get "local" info for a single block of given backup, this is for "Parity" surface.  
+    """
     if not local_files().has_key(backupID):
         return [0] * suppliers_set().supplierCount
     if not local_files()[backupID].has_key(blockNum):
@@ -875,6 +1069,9 @@ def GetLocalParityArray(backupID, blockNum):
     
 
 def GetRemoteDataArray(backupID, blockNum):
+    """
+    Get "remote" info for a single block of given backup, this is for "Data" surface.  
+    """
     if not remote_files().has_key(backupID):
         return [0] * suppliers_set().supplierCount
     if not remote_files()[backupID].has_key(blockNum):
@@ -883,6 +1080,9 @@ def GetRemoteDataArray(backupID, blockNum):
 
     
 def GetRemoteParityArray(backupID, blockNum):
+    """
+    Get "remote" info for a single block of given backup, this is for "Parity" surface.  
+    """
     if not remote_files().has_key(backupID):
         return [0] * suppliers_set().supplierCount
     if not remote_files()[backupID].has_key(blockNum):
@@ -891,6 +1091,9 @@ def GetRemoteParityArray(backupID, blockNum):
 
 
 def GetSupplierStats(supplierNum):
+    """
+    Collect info from "remote" matrix about given supplier.
+    """
     result = {}
     files = total = 0
     for backupID in remote_files().keys():
@@ -908,8 +1111,9 @@ def GetSupplierStats(supplierNum):
 
 
 def GetWeakLocalBlock(backupID):
-    # scan all local blocks for this backup 
-    # and find the worst block 
+    """
+    Scan all "local" blocks for given backup and find the most "weak" block. 
+    """
     supplierCount = suppliers_set().supplierCount
     if not local_files().has_key(backupID):
         return -1, 0, supplierCount
@@ -930,8 +1134,10 @@ def GetWeakLocalBlock(backupID):
  
     
 def GetWeakRemoteBlock(backupID):
-    # scan all remote blocks for this backup 
-    # and find the worst block - less suppliers keeps the data and stay online 
+    """
+    Scan all "remote" blocks for given backup and find the most "weak" block - 
+    less suppliers keeps the data and stay online.
+    """ 
     supplierCount = suppliers_set().supplierCount
     if not remote_files().has_key(backupID):
         return -1, 0, supplierCount
@@ -957,10 +1163,16 @@ def GetWeakRemoteBlock(backupID):
 #------------------------------------------------------------------------------ 
 
 def SetBackupStatusNotifyCallback(callBack):
+    """
+    This is to catch in the GUI when some backups stats were changed.
+    """
     global _BackupStatusNotifyCallback
     _BackupStatusNotifyCallback = callBack
 
 def SetLocalFilesNotifyCallback(callback):
+    """
+    This is to catch in the GUI when some local files were changed.
+    """
     global _LocalFilesNotifyCallback
     _LocalFilesNotifyCallback = callback
 

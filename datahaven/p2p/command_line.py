@@ -9,6 +9,19 @@
 #
 #
 
+"""
+Here is a bunch of methods to process input from command-line.
+
+User can pass arguments via command line and newly executed DHN process 
+will communicate with already started DHN main application to do needed operations.
+In some cases we do not need to communicate - the new process just prints some static data and exit.
+
+To communicate with existing DHN process new instance first reads the port number of the 
+HTML web server (see `p2p.webcontrol` module) and then connect to that port and send request.
+
+See `p2p.help` module for commands details.
+"""
+
 import os
 import sys
 import re
@@ -39,6 +52,9 @@ import webcontrol
 #------------------------------------------------------------------------------ 
 
 def run(opts, args, overDict, pars):
+    """
+    The entry point, this is called from `p2p.dhnmain` to process command line arguments.
+    """
     print 'Copyright 2006, DataHaven.NET LTD. of Anguilla. All rights reserved.'
     
     if overDict:
@@ -193,6 +209,10 @@ def run(opts, args, overDict, pars):
 #------------------------------------------------------------------------------ 
 
 def run_url_command(address, stop_reactor_in_errback=True):
+    """
+    Method to communicate with existing DHN process with HTTP request.
+    Reads port number of the local HTTP server and do the request.
+    """
     try:
         local_port = int(dhnio.ReadBinaryFile(settings.LocalPortFilename()))
     except:
@@ -215,6 +235,10 @@ def run_url_command(address, stop_reactor_in_errback=True):
 
 
 def find_comments(output):
+    """
+    Parse HTTP response to find all comments in the HTML code.
+    This is a small trick to pass output to the command line.
+    """
     if output is None or str(output).strip() == '':
         return ['empty output']
     if not isinstance(output, str):
@@ -222,15 +246,19 @@ def find_comments(output):
     return re.findall('\<\!--\[begin\] (.+?) \[end\]--\>', output, re.DOTALL)
 
 def print_and_stop(src):
+    """
+    Print all comments from `src` and stop the reactor. 
+    """
     for s in find_comments(src):
         print unicode(s)
     print
     if reactor.running and not reactor._stopped:
         reactor.stop()
     
-#------------------------------------------------------------------------------ 
-
 def print_single_setting_and_stop(path, run_reactor=True):
+    """
+    A method used to print single user option in the command line.
+    """
     if path != '':
         url = webcontrol._PAGE_SETTINGS + '/' + path
         run_url_command(url).addCallback(print_and_stop)
@@ -240,6 +268,9 @@ def print_single_setting_and_stop(path, run_reactor=True):
     return 2
 
 def print_all_settings_and_stop():
+    """
+    Writes out all user settings to the command line output and stop the reactor.
+    """
     url = webcontrol._PAGE_SETTINGS_LIST
     run_url_command(url).addCallback(print_and_stop)
     reactor.run()
@@ -783,8 +814,8 @@ def cmd_uninstall(opts, args, overDict):
                 dhnio.Dprint(0, 'some DataHaven.NET process found, but can not stop it\n')
                 return 1
             time.sleep(1)            
-    def wait_than_kill(x):
-        dhnio.Dprint(0, 'wait_than_kill')
+    def wait_then_kill(x):
+        dhnio.Dprint(0, 'wait_then_kill')
         total_count = 0
         #while True:
         def _try():
@@ -828,7 +859,7 @@ def cmd_uninstall(opts, args, overDict):
     dhnio.Dprint(0, 'found DataHaven.NET processes ...   ')
     try:
         url = webcontrol._PAGE_ROOT+'?action=exit'
-        run_url_command(url).addCallback(wait_than_kill)
+        run_url_command(url).addCallback(wait_then_kill)
         #reactor.addSystemEventTrigger('before', 'shutdown', do_uninstall)
         reactor.run()
         return 0

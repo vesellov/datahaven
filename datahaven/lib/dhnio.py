@@ -543,6 +543,15 @@ def DisableLogs():
 
 #-------------------------------------------------------------------------------
 
+def list_dir_safe(dirpath):
+    """
+    A safe wrapper around built-in `os.listdir()` method. 
+    """
+    try:
+        return os.listdir(dirpath)
+    except:
+        return []
+
 def list_dir_recursive(dirpath):
     """
     Recursively scan files and folders under `dirpath` and return them in the list.

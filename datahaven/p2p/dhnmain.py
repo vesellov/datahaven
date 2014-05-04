@@ -9,6 +9,10 @@
 #
 #
 
+"""
+This is the entry point of the program, see method `main()` bellow.
+"""
+
 import os
 import sys
 import time
@@ -16,12 +20,22 @@ import time
 #-------------------------------------------------------------------------------
 
 def show():
+    """
+    Just calls `p2p.webcontrol.show()` to open the GUI. 
+    """
     import webcontrol
     webcontrol.show()
     return 0
 
 
 def run(UI='', options=None, args=None, overDict=None):
+    """
+    In the method `main()` program firstly checks the command line arguments 
+    and then calls this method to start the whole process.
+    This initialize some low level modules and finally create 
+    an instance of `initializer()` state machine and send it an event "run".
+    """
+    
     import lib.dhnio as dhnio
     dhnio.Dprint(6, 'dhnmain.run sys.path=%s' % str(sys.path))
     
@@ -163,6 +177,9 @@ def run(UI='', options=None, args=None, overDict=None):
 #------------------------------------------------------------------------------
 
 def parser():
+    """
+    Create an `optparse.OptionParser` object to read command line arguments.
+    """
     from optparse import OptionParser, OptionGroup
     parser = OptionParser(usage = usage())
     group = OptionGroup(parser, "Log")
@@ -220,11 +237,14 @@ def parser():
                         default=9996,
                         help='set port number for memdebug web server, default is 9995',)    
     parser.add_option_group(group)
-
     return parser
 
 
 def override_options(opts, args):
+    """
+    The program can replace some user options by values passed via command line.
+    This method return a dictionary where is stored a key-value pairs for new options.   
+    """
     overDict = {}
     if opts.tcp_port:
         overDict['transport.transport-tcp.transport-tcp-port'] = str(opts.tcp_port)
@@ -249,6 +269,9 @@ def override_options(opts, args):
 #------------------------------------------------------------------------------ 
 
 def kill():
+    """
+    Kill all running DataHaven.NET processes (except current).
+    """
     import lib.dhnio as dhnio
     total_count = 0
     found = False
@@ -284,7 +307,14 @@ def kill():
         time.sleep(1)
 
 
-def wait_than_kill(x):
+def wait_then_kill(x):
+    """
+    For correct shutdown of the program need to send a URL request to the HTTP server:
+        http://localhost:<random port>/?action=exit
+    After receiving such request the program will call `p2p.dhninit.shutdown()` method and stops.
+    But if the main process was blocked it needs to be killed with system "kill" procedure.
+    This method will wait for 10 seconds and then call method `kill()`.    
+    """
     from twisted.internet import reactor
     import lib.dhnio as dhnio
     total_count = 0
@@ -321,6 +351,10 @@ _DelayedCallsIndex = {}
 _LastCallableID = 0
 
 class DHN_callable():
+    """
+    This class shows my experiments with performance monitoring.
+    I tried to decrease the number of delayed calls.
+    """
     def __init__(self, callable, *args, **kw):
         global _DelayedCallsIndex
         self.callable = callable
@@ -337,17 +371,26 @@ class DHN_callable():
         self.to_call()
 
 def DHN_callLater(delay, callable, *args, **kw):
+    """
+    A wrapper around Twisted `reactor.callLater()` method.
+    """
     global _OriginalCallLater
     dhn_call = DHN_callable(callable, *args, **kw)
     delayed_call = _OriginalCallLater(delay, dhn_call.call)
     return delayed_call
 
 def patchReactorCallLater(r):
+    """
+    Replace original `reactor.callLater()` with my hacked solution to monitor overall performance.
+    """
     global _OriginalCallLater
     _OriginalCallLater = r.callLater
     r.callLater = DHN_callLater 
 
 def monitorDelayedCalls(r):
+    """
+    Print out all delayed calls.
+    """
     global _DelayedCallsIndex
     import lib.dhnio as dhnio
     keys = _DelayedCallsIndex.keys()
@@ -362,6 +405,9 @@ def monitorDelayedCalls(r):
 #------------------------------------------------------------------------------ 
 
 def main():
+    """
+    THIS IS THE ENTRY POINT OF THE PROGRAM!
+    """
     try:
         import lib.dhnio as dhnio
     except:
@@ -559,7 +605,7 @@ def main():
                 from twisted.internet import reactor
                 from command_line import run_url_command
                 url = '?action=exit'
-                run_url_command(url, False).addBoth(wait_than_kill)
+                run_url_command(url, False).addBoth(wait_then_kill)
                 reactor.run()
                 dhnio.shutdown()
                 return 0
@@ -631,6 +677,9 @@ def main():
 
 
 def usage():
+    """
+    Calls `p2p.help.usage()` method to print out how to run DHN software from command line.
+    """
     try:
         import help
         return help.usage()
@@ -639,6 +688,9 @@ def usage():
     
 
 def help():
+    """
+    Same thing, calls `p2p.help.help()` to show detailed instructions.
+    """
     try:
         import help
         return help.help()
@@ -647,6 +699,9 @@ def help():
 
 
 def backup_schedule_format():
+    """
+    See `p2p.help.schedule_format()` method.
+    """
     try:
         import help
         return help.schedule_format()
@@ -655,6 +710,10 @@ def backup_schedule_format():
 
 
 def copyright():
+    """
+    Print DataHaven.NET copyright string:
+        `Copyright DataHaven.NET LTD. of Anguilla, 2006. All rights reserved.`
+    """
     print 'Copyright DataHaven.NET LTD. of Anguilla, 2006. All rights reserved.'
 
 #------------------------------------------------------------------------------ 

@@ -5,23 +5,29 @@
 #      http://datahaven.net/terms_of_use.html
 #    All rights reserved.
 #
-#  http://docs.python.org/lib/tar-examples.html
-#
-#  This python code can be used to replace the Unix tar command
-#  and so be portable to non-unix machines.
-#
-#  There are other python tar libraries, but this is included with Python
-#
-#  If we kept track of how far we were through a list of files, and broke off
-#    new dhnblocks at file boundaries, we could restart a backup and continue
-#    were we left off if a crash happened while we were waiting to send a block
-#    (most of the time is waiting so good chance).
-#
-#  *************  WARNING ***************
-#  Note that we should not print things here because tar output goes to standard out.
-#  If we print anything else to stdout the .tar file will be ruined.
-#  We must also not print things in anything this calls.
-#  *************  WARNING ***************
+
+"""
+This python code can be used to replace the Unix tar command
+and so be portable to non-unix machines.
+There are other python tar libraries, but this is included with Python.
+So that file is starter as child process of DHN to prepare data for backup.
+
+TODO:
+If we kept track of how far we were through a list of files, and broke off
+new `dhnblocks` at file boundaries, we could restart a backup and continue
+were we left off if a crash happened while we were waiting to send a block
+(most of the time is waiting so good chance).
+
+*************  WARNING ***************
+Note that we should not print things here because tar output goes to standard out.
+If we print anything else to stdout the .tar file will be ruined.
+We must also not print things in anything this calls.
+*************  WARNING ***************
+
+Inspired from examples here:
+    http://docs.python.org/lib/tar-examples.html
+    http://code.activestate.com/recipes/299412/
+"""
 
 import os
 import sys
@@ -37,6 +43,9 @@ except:
 #------------------------------------------------------------------------------ 
 
 def logfilepath():
+    """
+    A method to detect where is placed the log file for `dhnbackup` child process.
+    """
     if platform.uname()[0] == 'Windows':
         logspath = os.path.join(os.environ['APPDATA'], 'DataHaven.NET', 'logs')
     else:
@@ -46,39 +55,51 @@ def logfilepath():
     return os.path.join(logspath, 'dhnbackup.log')
 
 def printlog(txt):
+    """
+    Write a line to the log file.
+    """
     LogFile = open(logfilepath(), 'a')
     LogFile.write(txt)
     LogFile.close()
 
 #------------------------------------------------------------------------------ 
 
-def _LinuxExcludeFunction(filename): 
-    # filename comes in with the path relative to the start path, 
-    # so dirbeingbackedup/photos/christmas2008.jpg
+def _LinuxExcludeFunction(filename):
+    """
+    Return True if given file must not be included in the backup.  
+    Filename comes in with the path relative to the start path, so: 
+        "dirbeingbackedup/photos/christmas2008.jpg"
+        
+    PREPRO:
+    On linux we should test for the attribute meaning "nodump" or "nobackup"
+    This is set with:
+        chattr +d <file>
+    And listed with: 
+        lsattr <file>
+    Also should test that the file is readable and maybe that directory is executable. 
+    If tar gets stuff it can not read - it just stops and we the whole process is failed.
+    """
     if filename.count("datahavennet"):
         return True
     if filename.count(".datahaven"):
         return True
     if not os.access(filename, os.R_OK):
         return True
-    # PREPRO  
-    #   On linux we should test for the attribute meaning "nodump" or "nobackup"
-    # This is set with
-    #     chattr +d  file
-    #   And listed with 
-    #     lsattr file
-    #  Also should test that the file is readable and maybe that directory is executable. 
-    #  If tar gets stuff it can not read it just stops.
     return False # don't exclude the file
 
-def _WindowsExcludeFunction(filename): 
-    # filename comes in with the path relative to the start path, 
-    # so "Local Settings\Application Data\Microsoft\Windows\UsrClass.dat"
-    # on windows I run into some files that Windows tells me 
-    # I don't have permission to open (system files), 
-    # I had hoped to use "os.access(filename, os.R_OK) == False" 
-    # to skip a file if I couldn't read it, 
-    # but I did not get it to work every time. DWC
+def _WindowsExcludeFunction(filename):
+    """
+    Same method for Windows platforms.
+    Filename comes in with the path relative to the start path, so: 
+        "Local Settings\Application Data\Microsoft\Windows\UsrClass.dat"
+    
+    PREPRO:
+    On windows I run into some files that Windows tells me 
+    I don't have permission to open (system files), 
+    I had hoped to use 
+        os.access(filename, os.R_OK) == False 
+    to skip a file if I couldn't read it, but I did not get it to work every time. DWC.
+    """
     if (filename.lower().find("local settings\\temp") != -1) or (filename.lower().find("datahaven.net") != -1) :
         return True
     return False # don't exclude the file
@@ -90,6 +111,9 @@ if platform.uname()[0] == 'Windows':
 #------------------------------------------------------------------------------
  
 def writetar(sourcepath, subdirs=True, compression='none', encoding=None):
+    """
+    Create a tar archive from given `sourcepath` location.
+    """
     mode = 'w|'
     if compression != 'none':
         mode += compression
@@ -130,6 +154,9 @@ def writetar(sourcepath, subdirs=True, compression='none', encoding=None):
 #------------------------------------------------------------------------------ 
 
 def readtar(archivepath, outputdir, encoding=None):
+    """
+    Extract tar file from `archivepath` location into local `outputdir` folder.
+    """
     mode = 'r:*'
     tar = tarfile.open(archivepath, mode, encoding=encoding)
     tar.extractall(outputdir)
@@ -138,6 +165,10 @@ def readtar(archivepath, outputdir, encoding=None):
 #------------------------------------------------------------------------------ 
 
 def main():
+    """
+    The entry point of the `dhnbackup` child process. 
+    Use command line arguments to get the command from `dhnmain`. 
+    """
     try:
         import sys
         reload(sys)

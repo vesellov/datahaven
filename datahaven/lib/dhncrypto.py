@@ -216,7 +216,7 @@ def EncryptBinaryPK(publickey, inp):
 
 def DecryptLocalPK(inp):
     """
-    Decrypt `inp` string with Private Key.
+    Decrypt `inp` string with your Private Key.
     We only decrypt with our local private key so no argument for that.
     """
     global MyRsaKey

@@ -120,6 +120,9 @@ def init():
 #------------------------------------------------------------------------------
 
 def inbox(newpacket, proto='', host=''):
+    """
+    
+    """
     if newpacket.Command == commands.Identity():
         # contact sending us current identity we might not have
         # so we handle it before check that packet is valid
@@ -150,8 +153,10 @@ def inbox(newpacket, proto='', host=''):
     return handled
 
 
-# Packet has been checked and is Valid()
 def inboxPacket(newpacket, proto, host):
+    """
+    Packet has been checked and method Valid() returns True.
+    """
     commandhandled = False
     if newpacket.Command == commands.Fail():
         Fail(newpacket)

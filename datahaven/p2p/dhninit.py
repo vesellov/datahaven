@@ -8,6 +8,10 @@
 #    All rights reserved.
 #
 
+"""
+The top level methods to manage startup process of the whole DataHaven.NET cdoe.  
+"""
+
 import os
 import sys
 import time
@@ -21,6 +25,7 @@ from twisted.internet import task
 
 import lib.dhnio as dhnio
 
+#------------------------------------------------------------------------------ 
 
 # need to change directory in case we were not in the p2p directory when datahaven started up,
 # need it to find dhntester.py and potentially others
@@ -38,6 +43,10 @@ UImode = ''
 
 
 def init_local(UI=''):
+    """
+    Run `init()` method in most important modules.
+    """
+    
     global UImode
     UImode = UI
     dhnio.Dprint(2, "dhninit.init_local")
@@ -47,8 +56,6 @@ def init_local(UI=''):
     misc.init()
     misc.UpdateSettings()
 
-    #Here we can change users settings depending on user name
-    #Small hack, but we want to do only during testing period.
     settings_patch()
 
     import lib.commands as commands
@@ -119,6 +126,9 @@ def init_local(UI=''):
     start_logs_rotate()
 
 def init_contacts(callback=None, errback=None):
+    """
+    Initialize `contacts` and `identitycache`. 
+    """
     dhnio.Dprint(2, "dhninit.init_contacts")
 
     import lib.misc as misc
@@ -136,6 +146,10 @@ def init_contacts(callback=None, errback=None):
 
 
 def init_connection():
+    """
+    Initialize other modules related to network communications.
+    """
+    
     global UImode
     dhnio.Dprint(2, "dhninit.init_connection")
 
@@ -212,6 +226,10 @@ def init_connection():
 
 
 def init_modules():
+    """
+    Finish initialization part, run delayed methods.
+    """
+    
     dhnio.Dprint(2,"dhninit.init_modules")
 
     import webcontrol
@@ -243,6 +261,11 @@ def init_modules():
 
 
 def shutdown(x=None):
+    """
+    This is a top level method which control the process of finishing the program.
+    Calls method `shutdown()` in other modules.
+    """
+    
     global initdone
     dhnio.Dprint(2, "dhninit.shutdown " + str(x))
     dl = []
@@ -314,6 +337,10 @@ def shutdown(x=None):
 
 
 def shutdown_restart(param=''):
+    """
+    Calls `shutdown()` method and stop the main reactor, then restart the program. 
+    """
+    
     dhnio.Dprint(2, "dhninit.shutdown_restart ")
 
     def do_restart(param):
@@ -330,6 +357,10 @@ def shutdown_restart(param=''):
 
 
 def shutdown_exit(x=None):
+    """
+    Calls `shutdown()` method and stop the main reactor, this will finish the program. 
+    """
+    
     dhnio.Dprint(2, "dhninit.shutdown_exit ")
 
     def shutdown_reactor_stop(x=None):
@@ -342,11 +373,19 @@ def shutdown_exit(x=None):
 
 
 def settings_patch():
+    """
+    Here you can change users settings depending on user name.
+    Small hacks to switch on/off some options, 
+    but we want to do that only during testing period.
+    """
     dhnio.Dprint(6, 'dhninit.settings_patch ')
     import lib.settings as settings
     
 
 def start_logs_rotate():
+    """
+    Checks and remove old or too big log files.
+    """
     dhnio.Dprint(4, 'dhninit.start_logs_rotate')
     def erase_logs():
         dhnio.Dprint(4, 'dhninit.erase_logs ')
@@ -411,6 +450,9 @@ def start_logs_rotate():
 
 
 def check_install():
+    """
+    Return True if Private Key and local identity files exists and both is valid.
+    """
     dhnio.Dprint(2, 'dhninit.check_install ')
     import lib.settings as settings
     import lib.identity as identity

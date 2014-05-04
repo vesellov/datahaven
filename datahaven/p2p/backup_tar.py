@@ -6,14 +6,24 @@
 #      http://datahaven.net/terms_of_use.html
 #    All rights reserved.
 #
-#  We want a pipe output or input so we don't need to store intermediate data.
-#
-#  The popen starts another process.  That process can block but we don't.
-#  backup.py only takes data from this pipe when it is ready.
+
+"""
+We want a pipe output or input so we don't need to store intermediate data.
+Our backup code only takes data from this pipe when it is ready and form blocks one by one.
+
+The class `lib.nonblocking.Popen` starts another process - that process can block but we don't.
+
+We call that "tar" because standard TAR utility is used
+to read data from files and folders and create a single data stream.
+This data stream is passed via `Pipe` to the main process.
+ 
+This module execute a sub process "dhnbackup" - pretty simple TAR compressor, 
+see `p2p.dhnbackup` module.
+"""
 
 import os
 import sys
-import subprocess
+# import subprocess
 
 try:
     import lib.dhnio as dhnio
@@ -27,39 +37,16 @@ except:
     except:
         sys.exit()
 
-import lib.nonblocking as nonblocking
+# import lib.nonblocking as nonblocking
+import lib.child_process as child_process
 
 #------------------------------------------------------------------------------ 
 
-def run(cmdargs):
-    dhnio.Dprint(14, "backup_tar.run %s" % str(cmdargs))
-    try:
-        if dhnio.Windows():
-            import win32process
-            p = nonblocking.Popen(
-                cmdargs,
-                shell=False,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=False,
-                creationflags = win32process.CREATE_NO_WINDOW,)
-        else:
-            p = nonblocking.Popen(
-                cmdargs,
-                shell=False,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=False,)
-    except:
-        dhnio.Dprint(1, 'backup_tar.run ERROR executing: ' + str(cmdargs) + '\n' + str(dhnio.formatExceptionInfo()))
-        return None
-    return p
-
-
-# Returns file descriptor for process that makes tar archive
 def backuptar(directorypath, recursive_subfolders=True, compress=None):
+    """
+    Returns file descriptor for process that makes tar archive.
+    In other words executes a child process and create a Pipe to communicate with it.
+    """
     if not os.path.isdir(directorypath):
         dhnio.Dprint(1, 'backup_tar.backuptar ERROR %s not found' % directorypath)
         return None
@@ -83,12 +70,16 @@ def backuptar(directorypath, recursive_subfolders=True, compress=None):
         dhnio.Dprint(1, 'backup_tar.backuptar ERROR %s not found' % commandpath)
         return None
     # dhnio.Dprint(14, "backup_tar.backuptar going to execute %s" % str(cmdargs))
-    p = run(cmdargs)
+    # p = run(cmdargs)
+    p = child_process.pipe(cmdargs)
     return p
 
 
-# Returns file descriptor for process that makes tar archive
 def backuptarfile(filepath, compress=None):
+    """
+    Almost same - returns file descriptor for process that makes tar archive.
+    But tar archive is created from single file, not folder.
+    """
     if not os.path.isfile(filepath):
         dhnio.Dprint(1, 'backup_tar.backuptarfile ERROR %s not found' % filepath)
         return None
@@ -109,11 +100,15 @@ def backuptarfile(filepath, compress=None):
         dhnio.Dprint(1, 'backup_tar.backuptarfile ERROR %s not found' % commandpath)
         return None
     # dhnio.Dprint(12, "backup_tar.backuptarfile going to execute %s" % str(cmdargs))
-    p = run(cmdargs)
+    # p = run(cmdargs)
+    p = child_process.pipe(cmdargs)
     return p
 
 
 def extracttar(tarfile, outdir):
+    """
+    Opposite method, run dhnbackup to extract files and folders from ".tar" file.
+    """
     if not os.path.isfile(tarfile):
         dhnio.Dprint(1, 'backup_tar.extracttar ERROR %s not found' % tarfile)
         return None
@@ -131,7 +126,8 @@ def extracttar(tarfile, outdir):
     if not os.path.isfile(commandpath):
         dhnio.Dprint(1, 'backup_tar.extracttar ERROR %s is not found' % commandpath)
         return None
-    p = run(cmdargs)
+    # p = run(cmdargs)
+    p = child_process.pipe(cmdargs)
     return p
 
 

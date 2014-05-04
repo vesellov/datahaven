@@ -1290,7 +1290,7 @@ def ClearAutorunWindows():
 #    cmdexec = r'reg add HK%s\software\microsoft\windows\currentversion\run /v "%s" /t REG_SZ /d "%s" /f' % (CUorLM, name, location)
 #    dhnio.Dprint(6, 'misc.SetAutorunWindows executing: ' + cmdexec)
 #    return nonblocking.ExecuteString(cmdexec)
-#
+
 #def ClearAutorunWindowsOld(CUorLM='CU', name = settings.ApplicationName()):
 #    cmdexec = r'reg delete HK%s\software\microsoft\windows\currentversion\run /v "%s" /f' % (CUorLM, name)
 #    dhnio.Dprint(6, 'misc.ClearAutorunWindows executing: ' + cmdexec)

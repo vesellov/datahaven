@@ -7,6 +7,14 @@
 #    All rights reserved.
 #
 
+"""
+Here is a state machine called backup_db_keeper() aimed to synchronize 
+local index database with remote suppliers.
+This allows to restore the index file 
+(with all your backup IDs and files and folders names)
+from your suppliers in case of data lost. 
+"""
+
 import os
 import sys
 import time
@@ -39,6 +47,9 @@ _BackupDBKeeper = None
 #------------------------------------------------------------------------------ 
 
 def A(event=None, arg=None):
+    """
+    Access method to interact with the state machine.
+    """
     global _BackupDBKeeper
     if _BackupDBKeeper is None:
         _BackupDBKeeper = BackupDBKeeper('backup_db_keeper', 'AT_STARTUP', 4)
@@ -49,17 +60,26 @@ def A(event=None, arg=None):
 #------------------------------------------------------------------------------ 
 
 class BackupDBKeeper(Automat):
+    """
+    A class to provides logic for database synchronization process.
+    """
     timers = {'timer-1sec':     (1,     ['RESTART']),
               'timer-30sec':    (30,    ['RESTART', 'REQUEST', 'SENDING']),
               'timer-1hour':    (60*60, ['READY']),}
     
     def init(self):
+        """
+        Set initial values.
+        """
         self.requestedSuppliers = set()
         self.sentSuppliers = set()
         self.lastRestartTime = 0
         self.syncFlag = False
 
     def A(self, event, arg):
+        """
+        The state machine code, generated using visio2python tool.
+        """
         #---AT_STARTUP---
         if self.state is 'AT_STARTUP':
             if event == 'restart' :

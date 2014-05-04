@@ -224,6 +224,9 @@ class Popen(subprocess.Popen):
 
 
 def ExecuteString(execstr):
+    """
+    An old method.
+    """
     try:
         import win32process
         return Popen(

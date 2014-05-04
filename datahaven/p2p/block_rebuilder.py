@@ -7,46 +7,27 @@
 #    All rights reserved.
 #
 
+"""
+A low level code to rebuild a single block of data for particular backup.
+"""
+
 import os
-import sys
-import time
-import random
-
-
-try:
-    from twisted.internet import reactor
-except:
-    sys.exit('Error initializing twisted.internet.reactor in block_rebuilder.py')
-
-from twisted.internet.defer import Deferred, maybeDeferred
-from twisted.internet import threads
-
 
 import lib.dhnio as dhnio
 import lib.misc as misc
-import lib.nameurl as nameurl
-import lib.transport_control as transport_control
 import lib.settings as settings
 import lib.contacts as contacts
-import lib.eccmap as eccmap
-import lib.tmpfile as tmpfile
-import lib.diskspace as diskspace
 import lib.packetid as packetid
-
-import fire_hire
-import backup_rebuilder
-import list_files_orator 
 
 import backup_matrix
 import raidread
-import p2p_service
-import io_throttle
-import contact_status
-import data_sender
 
 #------------------------------------------------------------------------------ 
 
 class BlockRebuilder():
+    """
+    This object is created in the backup_rebuilder() to work on single block of given backup.
+    """
     def __init__(self,  
                  eccMap, 
                  backupID, 
@@ -83,6 +64,13 @@ class BlockRebuilder():
         self.reconstructedParity = [0] * self.supplierCount
 
     def IdentifyMissing(self):
+        """
+        This builds a list of missing pieces.
+        The file is missing if value in the corresponding cell 
+        in the "remote" matrix (see `p2p.backup_matrix`) is -1 or 0 
+        but the supplier who must keep that file is online.
+        In other words, if supplier is online but do not have that piece - this piece is missing.
+        """
         self.availableSuppliers = self.supplierSet.GetActiveArray()
         for supplierNum in xrange(self.supplierCount):
             if self.availableSuppliers[supplierNum] == 0:
@@ -97,6 +85,9 @@ class BlockRebuilder():
                 self.missingParity[supplierNum] = 1
 
     def IsMissingFilesOnHand(self):
+        """
+        If we have all missing pieces on hands - just need to transfer them, not need to rebuild anything.
+        """
         for supplierNum in xrange(self.supplierCount):
             # if supplier do not have the Data but is on line 
             if self.missingData[supplierNum] == 1:
@@ -110,19 +101,31 @@ class BlockRebuilder():
                     return False
         return True
 
-    def BuildRaidFileName(self, supplierNumber, dataOrParity):
-        return os.path.join(settings.getLocalBackupsDir(), self.BuildFileName(supplierNumber, dataOrParity))
-
     def BuildFileName(self, supplierNumber, dataOrParity):
+        """
+        Build a file name for that piece depend on given supplier.
+        """
         return packetid.MakePacketID(self.backupID, self.blockNum, supplierNumber, dataOrParity)
 
+    def BuildRaidFileName(self, supplierNumber, dataOrParity):
+        """
+        Same but return an absolute path of that file.
+        """
+        return os.path.join(settings.getLocalBackupsDir(), self.BuildFileName(supplierNumber, dataOrParity))
+
     def HaveAllData(self, parityMap):
+        """
+        Return True if you have on hands all needed pieces to rebuild the block.
+        """
         for segment in parityMap:
             if self.localData[segment] == 0:
                 return False
         return True
 
     def AttemptRebuild(self):
+        """
+        This made an attempt to rebuild the missing pieces from pieces we have on hands. 
+        """
         dhnio.Dprint(14, 'block_rebuilder.AttemptRebuild %s %d BEGIN' % (self.backupID, self.blockNum))
         newData = False
         madeProgress = True
@@ -188,6 +191,9 @@ class BlockRebuilder():
         return newData
 
     def WorkDoneReport(self):
+        """
+        Notify to `backup_matrix` module about rebuilding results.
+        """
         for supplierNum in xrange(self.supplierCount):
             if self.localData[supplierNum] == 1 and self.reconstructedData[supplierNum] == 1:
                 backup_matrix.LocalFileReport(None, self.backupID, self.blockNum, supplierNum, 'Data')

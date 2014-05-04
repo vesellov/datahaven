@@ -6,5 +6,5 @@
 #
 
 """
-Contains modules to run DataHaven.NET Client code.
+Contains modules to run DataHaven.NET client code.
 """

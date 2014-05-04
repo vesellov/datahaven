@@ -354,7 +354,6 @@ def UpdateTransports(arg):
     # let's stop transport not needed anymore    
         pass
 
-
     def _stop_transports():
         stoplist = []
         for proto in transport_control.ListSupportedProtocols():

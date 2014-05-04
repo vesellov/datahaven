@@ -1,21 +1,41 @@
 #!/usr/bin/python
 #central_service.py
 #
-#
 #    Copyright DataHaven.NET LTD. of Anguilla, 2006
 #    Use of this software constitutes acceptance of the Terms of Use
 #      http://datahaven.net/terms_of_use.html
 #    All rights reserved.
 #
-#
-# This is for services with the central DHN.  Main services are:
-#
-# 1) register with central service
-# 2) list suppliers or customers
-# 3) fire a supplier, hire another supplier
-# 4) account information and transfers  - done in account.py
-# 5) nearnesscheck - meat of function done by nearnesscheck.py
-#
+
+"""
+This is for services with the Central server.
+Main services are:
+    1) register with central service
+    2) list suppliers or customers
+    3) fire a supplier, hire another supplier
+    4) account information and transfers
+    5) nearnesscheck - meat of function done by nearnesscheck.py, not done yet
+
+
+Account
+User needs to be able to know his balance. We want to keep it on
+this machine, not check Central each time.  Might have a charge
+for checking with Central and keep date of last checkin so user
+can not check in too often.
+
+Users who have been with DHN for more than 6 months will be able
+to transfer some of his prepaid/earned balance to another user.
+This is like a prepaid cellphone transfering balance to another phone.
+
+
+Market
+Market server can accept bids and offers from users to buy/sell credits for bitcoins.
+It acts as a third party in the deal.
+First we send a Transfer packet to the Central - the destination ID belongs to Market server. 
+The packet contains info about bid or offer.
+Central server checks that user to see he have the needed balance 
+and transfer funds to Market server.
+"""
 
 import os
 import sys
@@ -76,6 +96,9 @@ OnMarketListFunc = None
 #-------------------------------------------------------------------------------
 
 def init(hello_interaval=60):
+    """
+    Should be started before all other methods here.
+    """
     global _InitDone
     if _InitDone:
         return
@@ -85,12 +108,19 @@ def init(hello_interaval=60):
     _InitDone = True
 
 def shutdown():
+    """
+    Called from top level when the program is shutting down.
+    """
     _LoopSendBandwidthReportsTask.cancel()
     return succeed(1)
 
 #------------------------------------------------------------------------------
 
 def inbox(newpacket, proto, host):
+    """
+    Called from transport_control when received any dhnpacket.
+    This is an entry point to process Central server responses.
+    """
     commandhandled = False
 
     if newpacket.OwnerID not in [ settings.CentralID(), settings.MarketServerID(), ]:
@@ -121,6 +151,9 @@ def inbox(newpacket, proto, host):
     return commandhandled
 
 def send2central(command, data, doAck=False, PacketID=None):
+    """
+    A method to prepare a packet for Central server and send it to the transport gate.
+    """
     MyID = misc.getLocalID()
     RemoteID = settings.CentralID()
     if PacketID is None:
@@ -137,6 +170,9 @@ def send2central(command, data, doAck=False, PacketID=None):
     return PacketID
 
 def send2market(command, data, doAck=False, PacketID=None):
+    """
+    Same - send a packet to Market server.
+    """
     MyID = misc.getLocalID()
     RemoteID = settings.MarketServerID()
     if PacketID is None:
@@ -151,18 +187,12 @@ def send2market(command, data, doAck=False, PacketID=None):
     transport_control.outbox(packet, doAck)
     return PacketID
 
-#------------------------------------------------------------------------------
-
-#def LoopSendAlive():
-#    dhnio.Dprint(4, 'central_service.LoopSendAlive')
-#    SendIdentity()
-#    reactor.callLater(settings.DefaultAlivePacketTimeOut(), LoopSendAlive)
-
-
 #-- SENDING --------------------------------------------------------------------
 
-# Register our identity with central
 def SendIdentity(doAck=False):
+    """
+    Register our identity with Central server.
+    """
     LocalIdentity = misc.getLocalIdentity()
     dhnio.Dprint(4, "central_service.SendIdentity") #' version=[%s] contacts=[%s]" % (str(LocalIdentity.version), str(LocalIdentity.contacts)))
     data = LocalIdentity.serialize()
@@ -171,10 +201,14 @@ def SendIdentity(doAck=False):
 
 #------------------------------------------------------------------------------ 
 
-# Say what eccmap we are using for recovery info
-# How many suppliers we want (probably same as used by eccmap but just in case)
-# Say how much disk we are donating now
 def SendSettings(doAck=False, packetID=None):
+    """
+    Say what eccmap we are using for recovery info.
+    How many suppliers we want (probably same as used by eccmap but just in case).
+    Say how much disk we are donating now and home much we need from our suppliers.
+    The response should be an Ack packet from Central server and
+    also it can sent us a new lsit of suppliers with ListContacts packet.
+    """
     if packetID is None:
         packetID = packetid.UniqueID()
     sdict = {}
@@ -209,23 +243,20 @@ def SendSettings(doAck=False, packetID=None):
     dhnio.Dprint(4, "central_service.SendSettings PacketID=[%s]" % pid)
     return pid
 
-def SettingsResponse(packet):
-    words = packet.Payload.split('\n')
-    try:
-        status = words[0]
-        last_receipt = int(words[1])
-    except:
-        status = ''
-        last_receipt = -1
-    dhnio.Dprint(4, "central_service.SettingsResponse: status=[%s] last receipt=[%s]" % (status, str(last_receipt)))
-
 def SendRequestSettings(doAck=False):
+    """
+    Send "RequestSettings" packet to Central Server.
+    """
     dhnio.Dprint(4, 'central_service.SendRequestSettings')
     return send2central(commands.RequestSettings(), '', doAck)
 
 #------------------------------------------------------------------------------ 
 
 def SendReplaceSupplier(numORidurl, doAck=False):
+    """
+    Send "FireContact" packet to Central server, 
+    this will replace given supplier with a random guy.
+    """
     if isinstance(numORidurl, str):
         idurl = numORidurl
     else:
@@ -240,6 +271,10 @@ def SendReplaceSupplier(numORidurl, doAck=False):
     return ret
 
 def SendChangeSupplier(numORidurl, newidurl, doAck=False):
+    """
+    Send "FireContact" packet to Central server, 
+    this is to change one supplier with another, by your choice.
+    """
     if isinstance(numORidurl, str):
         idurl = numORidurl
     else:
@@ -251,6 +286,11 @@ def SendChangeSupplier(numORidurl, newidurl, doAck=False):
     ret = send2central(commands.FireContact(), data, doAck)
 
 def SendReplaceCustomer(numORidurl, doAck=False):
+    """
+    Send "FireContact" packet to Central server to remove a customer.
+    This man will need to find a new supplier.
+    Central server will do that automatically.
+    """
     if isinstance(numORidurl, str):
         idurl = numORidurl
     else:
@@ -267,6 +307,9 @@ def SendReplaceCustomer(numORidurl, doAck=False):
 #------------------------------------------------------------------------------ 
 
 def SendRequestSuppliers(data = '', doAck=False):
+    """
+    Send "RequestSuppliers" packet to Central server to get a list of my suppliers.    
+    """
     global _LastRequestSuppliers
     dt = time.time() - _LastRequestSuppliers
     if dt < 60 * 10:
@@ -277,6 +320,9 @@ def SendRequestSuppliers(data = '', doAck=False):
     return send2central(commands.RequestSuppliers(), data, doAck)
 
 def SendRequestCustomers(data = '', doAck=False):
+    """
+    Send "RequestCustomers" packet to Central server to get a list of my customers.    
+    """
     global _LastRequestCustomers
     dt = time.time() - _LastRequestCustomers
     if dt < 60 * 10:
@@ -287,66 +333,73 @@ def SendRequestCustomers(data = '', doAck=False):
     return send2central(commands.RequestCustomers(), data, doAck)
 
 #------------------------------------------------------------------------------ 
-# Account
-# User needs to be able to know his balance. We want to keep it on
-#   this machine, not check central each time.  Might have a charge
-#   for checking with central and keep date of last checkin so user
-#   can not check in too often.
-#
-# Users who have been with DHN for more than 6 months will be able
-#    to transfer some of his prepaid/earned balance to another user.
-#    This is like a prepaid cellphone transfering balance to another phone.
-#
-#    A dhnpacket with a commands.Transfer()
-#         The data portion says:
-#             Amount: 23.4
-#             To: http://foo.bar/baz.xml
-#
-#    With the dhnpacket signed, we know it is legit.  The ID of the destination is there.
-#
-#
+
 def SendTransfer(DestinationID, Amount, doAck=False):
+    """
+    Send "Transfer" packet to Central server to do money transfer.    
+    A dhnpacket with a commands.Transfer(), the data portion says:
+        Amount: 23.4
+        To: http://foo.bar/baz.xml
+    
+    With the dhnpacket signed, we know it is legit.  
+    The ID of the destination is there.
+    """
     dhnio.Dprint(4, "central_service.SendTransfer  DestinationID=%s  Amount=%s" % (DestinationID, str(Amount)))
     data = DestinationID+'\n'+str(Amount)
     return send2central(commands.Transfer(), data, doAck)
 
 
 def SendRequestReceipt(missing_receipts, doAck=False):
+    """
+    Send "RequestReceipt" packet to Central server to get a transfers history.    
+    """
     dhnio.Dprint(4, 'central_service.SendRequestReceipt ' + str(missing_receipts))
     data = string.join(list(missing_receipts), ' ')
     return send2central(commands.RequestReceipt(), data, doAck)
 
 #------------------------------------------------------------------------------ 
-# Market
-# First we send a Transfer packet to the Central - the destination ID is Market server 
-# The packet contains info about bid or offer.
-# Central server checks that user have the needed balance and transfer funds to Market server
-#
 def SendBid(maxamount, price, days, comment, btcaddress, transactionid, doAck=False):
+    """
+    Send a "Transfer" packet to Market server to place a bid (to buy DHN credits).
+    """
     dhnio.Dprint(4, 'central_service.SendBid ' + str((maxamount, price, days)))
     data = '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s' % (misc.getLocalID(), 'bid', misc.float2str(maxamount), misc.float2str(price), str(days), str(btcaddress), str(transactionid), str(comment).replace('\n', ''))
     # send bid to the Market server
     return send2market(commands.Transfer(), data, doAck) 
 
 def SendCancelBid(bidID, doAck=False):
+    """
+    Send a "Transfer" packet to Market server to cancel a bid, 
+    Your bitcoins should be returned to you.
+    """
     dhnio.Dprint(4, 'central_service.SendCancelBid ' + str(bidID))
     data = '%s\n%s\n%s' % (misc.getLocalID(), 'cancelbid', bidID)
     # send 'cencel bid' to Market server
     return send2market(commands.Transfer(), data, doAck)
 
 def SendOffer(maxamount, minamount, price, days, comment, btcaddress, doAck=False):
+    """
+    Send a "Transfer" packet to Market server to place an offer (to sell DHN credits).
+    """
     dhnio.Dprint(4, 'central_service.SendOffer ' + str((maxamount, price, days, btcaddress)))
     data = '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s' % (settings.MarketServerID(), 'offer', misc.float2str(maxamount), misc.float2str(minamount), misc.float2str(price), str(days),  btcaddress, str(comment).replace('\n', ''))
     # send offer to the Central server to check user balance first and than send Receipt to Market server
     return send2central(commands.Transfer(), data, doAck)
 
 def SendCancelOffer(offerID, doAck=False):
+    """
+    Send a "Transfer" packet to the Market server to cancel given offer, 
+    Your DHN credits will return to you.
+    """
     dhnio.Dprint(4, 'central_service.SendCancelOffer ' + str(offerID))
     data = '%s\n%s\n%s' % (misc.getLocalID(), 'canceloffer', offerID)
     # send 'cancel offer' to Market server
     return send2market(commands.Transfer(), data, doAck)
 
 def MarketListAck(newpacket):
+    """
+    This is to process responses from Market server.
+    """
     global _MarketBids
     global _MarketOffers
     global OnMarketListFunc
@@ -376,6 +429,9 @@ def MarketListAck(newpacket):
         OnMarketListFunc()   
 
 def SendRequestMarketList(doAck=True, packetID=None):
+    """
+    Send my "Identity" packet to the Market server to request a list if my opened bids and offers.
+    """
     LocalIdentity = misc.getLocalIdentity()
     dhnio.Dprint(4, "central_service.SendRequestMarketList")
     data = LocalIdentity.serialize()
@@ -386,14 +442,19 @@ def SendRequestMarketList(doAck=True, packetID=None):
 
 #--- RECEIVING -----------------------------------------------------------------
 
-
 def Ack(packet):
+    """
+    Called when "Ack" packet is received. 
+    """
     dhnio.Dprint(4, "central_service.Ack packetID=[%s]" % packet.PacketID)
     if packet.CreatorID == settings.MarketServerID():
         MarketListAck(packet)
 
 
 def Receipt(request):
+    """
+    Called when "Receipt" packet is received. 
+    """
     dhnio.Dprint(4, "central_service.Receipt " )
     money.InboxReceipt(request)
     if request.OwnerID != settings.MarketServerID():
@@ -414,6 +475,11 @@ def Receipt(request):
 #bS user was banned with negative balance
 legal_codes = ['S','C','s','c','fS','fC','fs','fc','bS']
 def ListContacts(request):
+    """
+    Called when "ListContacts" packet is received, 
+    it keeps a list of suppliers OR customers and some extra info.
+    I think this is a most important method here, call different code from here.
+    """
     global _CentralStatusDict
     global legal_codes
     global OnListSuppliersFunc
@@ -569,18 +635,27 @@ def ListContacts(request):
 
 #--- NEARNESS ------------------------------------------------------------------
 
-#  NearnessCheck request coming from central
-#  When request comes in we start the check with callback
-#  going to NearnessResult which will send results to central.
 def NearnessCheck(request):
+    """
+    Nearness check code is not done yet and this method is not used. 
+    "NearnessCheck" request coming from Central server, 
+    when request comes in we start the check with callback
+    going to `NearnessResult()` which will send results to Central.
+    """
     dhnio.Dprint(4, "central_service.NearnessCheck")
 
 def NearnessResult():
+    """
+    Nearness check code is not done yet and this method is not used. 
+    """
     dhnio.Dprint(4, "central_service.NearnessResult")
 
 #--- BANDWIDTH -----------------------------------------------------------------
 
 def LoopSendBandwidthReport():
+    """
+    Called from `central_connector()` machine to send bandwith reports to the Central server periodically.
+    """
     global _LoopSendBandwidthReportsTask
     if _LoopSendBandwidthReportsTask is not None:
         return
@@ -593,6 +668,9 @@ def LoopSendBandwidthReport():
     _LoopSendBandwidthReportsTask = reactor.callLater(interval, LoopSendBandwidthReport)
 
 def SendBandwidthReport():
+    """
+    Prepare and send "BandwidthReport" packet to the Central server.
+    """
     listin, listout = bandwidth.files2send()
     if len(listin) == 0 and len(listout) == 0:
         dhnio.Dprint(4, 'central_service.SendBandwidthReport skip')
@@ -630,6 +708,9 @@ def SendBandwidthReport():
     return send2central(commands.BandwidthReport(), src)
 
 def ReceiveBandwidthAck(packet):
+    """
+    This is called when you got an "Ack" from Central server after "BandwidthReport" packet sent. 
+    """
     dhnio.Dprint(4, 'central_service.ReceiveBandwidthAck')
     for line in packet.Payload.split('\n'):
         try:
@@ -658,13 +739,24 @@ def ReceiveBandwidthAck(packet):
 
 #-------------------------------------------------------------------------------
 
-# possible values are: 
-# '!' - ONLINE, 'x' - OFFLINE, '~' - was connected in last hour, '?' - unknown
 def get_user_status(idurl):
+    """
+    An access method to get a "last known" user status, 
+    Central server keeps track of who among users is online or not at the moment.
+    Return values are single characters: 
+        - "!" - ONLINE
+        - "x" - OFFLINE 
+        - "=" - was connected less than 10 minutes ago 
+        - "~" - was connected less than a hour ago
+        - "?" - unknown status, no info yet
+    """
     global _CentralStatusDict
     return _CentralStatusDict.get(idurl, '?') 
 
 def clear_users_statuses(users_list):
+    """
+    Erase all users stats comes from Central server.
+    """
     global _CentralStatusDict
     for idurl in users_list:
         _CentralStatusDict.pop(idurl, None)
@@ -672,6 +764,9 @@ def clear_users_statuses(users_list):
 #------------------------------------------------------------------------------ 
 
 def main():
+    """
+    For test.
+    """
     try:
         from twisted.internet import reactor
     except:

@@ -30,7 +30,7 @@ _CachingTasks = {}
 def init(success_func=None, fail_func=None):
     """
     This should be called before all other things.
-    Call to initialize identitydb and cache most important ids.
+    Call to initialize identitydb and cache several important IDs.
     """
     dhnio.Dprint(4, 'identitycache.init')
     identitydb.init()

@@ -21,6 +21,42 @@ To be able to receive UDP datagrams from another machine both sides must act sim
 This code is doing that.
 """
 
+"""
+TODO: 
+Need Bug FIX
+10:59.15              >>>>>> {96046012} send via UDP to spartacus at udp://86.29.75.151:60915
+Unhandled Error
+Traceback (most recent call last):
+  File "C:\work\soft\Python27\lib\site-packages\wx-2.8-msw-unicode\wx\_core.py", line 8010, in MainLoop
+    wx.PyApp.MainLoop(self)
+  File "C:\work\soft\Python27\lib\site-packages\wx-2.8-msw-unicode\wx\_core.py", line 7306, in MainLoop
+    return _core_.PyApp_MainLoop(*args, **kwargs)
+  File "C:\work\soft\Python27\lib\site-packages\wx-2.8-msw-unicode\wx\_core.py", line 14669, in <lambda>
+    lambda event: event.callable(*event.args, **event.kw) )
+  File "C:\work\soft\Python27\lib\site-packages\twisted\internet\_threadedselect.py", line 225, in _interleave
+    self.runUntilCurrent()
+--- <exception caught here> ---
+  File "C:\work\soft\Python27\lib\site-packages\twisted\internet\base.py", line 824, in runUntilCurrent
+    call.func(*call.args, **call.kw)
+  File "C:\work\datahaven\lib\automat.py", line 173, in event
+    self.A(event, arg)
+  File "C:\work\datahaven\lib\transport_udp.py", line 173, in A
+    self.doClientOutboxFile(arg)
+  File "C:\work\datahaven\lib\transport_udp.py", line 436, in doClientOutboxFile
+    transport_udp_session.outbox_file(address, filename, fast, description)
+  File "C:\work\datahaven\lib\transport_udp_session.py", line 989, in outbox_file
+    check_outbox_queue()
+  File "C:\work\datahaven\lib\transport_udp_session.py", line 894, in check_outbox_queue
+    check_sending_queue()
+  File "C:\work\datahaven\lib\transport_udp_session.py", line 900, in check_sending_queue
+    if sess.processSending():
+  File "C:\work\datahaven\lib\transport_udp_session.py", line 788, in processSending
+    self.clearOutboxQueue()
+  File "C:\work\datahaven\lib\transport_udp_session.py", line 795, in clearOutboxQueue
+    filename, filesize, transfer_id, description = self.outbox_queue.pop(0)
+exceptions.ValueError: need more than 2 values to unpack
+"""
+
 import os
 import sys
 import time

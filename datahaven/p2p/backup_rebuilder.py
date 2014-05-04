@@ -7,10 +7,17 @@
 #    All rights reserved.
 #
 
+"""
+This is a state machine to run the rebuilding process.
+If some pieces is missing, need to reconstruct them asap.
+To do than need to have needed number of pieces on hands, 
+so need to request missing segments.
+The backup_rebuilder() machine works on backups one by one (keep them in queue) 
+and can be stopped and started at any time.
+"""
+
 import os
 import sys
-import time
-import random
 
 
 try:
@@ -18,32 +25,26 @@ try:
 except:
     sys.exit('Error initializing twisted.internet.reactor in backup_rebuilder.py')
 
-from twisted.internet.defer import Deferred, maybeDeferred
-from twisted.internet import threads
+from twisted.internet.defer import maybeDeferred
 
 
 import lib.dhnio as dhnio
 import lib.misc as misc
-import lib.nameurl as nameurl
-import lib.transport_control as transport_control
 import lib.settings as settings
 import lib.contacts as contacts
 import lib.eccmap as eccmap
-import lib.tmpfile as tmpfile
-import lib.diskspace as diskspace
 import lib.packetid as packetid
 from lib.automat import Automat
 
 
-import fire_hire
 import backup_monitor
 import block_rebuilder
 import data_sender
-import lib.automats as automats
 
 import backup_matrix
-import raidread
 import io_throttle
+
+#------------------------------------------------------------------------------ 
 
 _BackupRebuilder = None
 _StoppedFlag = True
@@ -53,6 +54,9 @@ _BlockRebuildersQueue = []
 #------------------------------------------------------------------------------ 
 
 def A(event=None, arg=None):
+    """
+    Access method to interact with the state machine.
+    """
     global _BackupRebuilder
     if _BackupRebuilder is None:
         _BackupRebuilder = BackupRebuilder('backup_rebuilder', 'STOPPED', 12)
@@ -62,6 +66,10 @@ def A(event=None, arg=None):
 
 
 class BackupRebuilder(Automat):
+    """
+    A class to prepare and run rebuilding operations. 
+    """
+
     timers = {
         'timer-1min':   (2*60, ['REQUEST']),
         'timer-10sec':  (10.0, ['REQUEST']),
@@ -69,6 +77,9 @@ class BackupRebuilder(Automat):
         }
     
     def init(self):
+        """
+        Initialize needed variables.
+        """
         self.currentBackupID = None             # currently working on this backup
         self.currentBlockNumber = -1            # currently working on this block
         self.workingBlocksQueue = []            # list of missing blocks we work on for current backup
@@ -76,10 +87,17 @@ class BackupRebuilder(Automat):
         self.missingSuppliers = set()
 
     def state_changed(self, oldstate, newstate):
+        """
+        This method is called every time when my state is changed.
+        Need to notify backup_monitor() machine about my new state. 
+        """
         # automats.set_global_state('REBUILD ' + newstate)
         backup_monitor.A('backup_rebuilder.state', newstate)
         
     def A(self, event, arg):
+        """
+        The state machine code, generated using visio2python tool.
+        """
         #---REQUEST---
         if self.state is 'REQUEST':
             if event == 'timer-1sec' and self.isStopped(arg) :
@@ -379,49 +397,53 @@ class BackupRebuilder(Automat):
 #------------------------------------------------------------------------------ 
 
 def AddBackupsToWork(backupIDs):
+    """
+    Put backups to the working queue, `backupIDs` is a list of backup IDs.
+    They will be reconstructed one by one. 
+    """
     global _BackupIDsQueue 
     _BackupIDsQueue.extend(backupIDs)
 
 
 def RemoveBackupToWork(backupID):
+    """
+    Remove single backup from the working queue.
+    """
     global _BackupIDsQueue
     if backupID in _BackupIDsQueue:
         _BackupIDsQueue.remove(backupID)
         
 
 def RemoveAllBackupsToWork():
+    """
+    Clear the whole working queue.
+    """
     global _BackupIDsQueue
     _BackupIDsQueue = []
 
 
 def SetStoppedFlag():
+    """
+    To stop backup_rebuilder() you need to call this method, 
+    it will set `_StoppedFlag` to True.
+    """
     global _StoppedFlag
     _StoppedFlag = True
     
     
 def ClearStoppedFlag():
+    """
+    This set `_StoppedFlag` to False.
+    """
     global _StoppedFlag
     _StoppedFlag = False
     
 
 def ReadStoppedFlag():
+    """
+    Return current state of `_StoppedFlag`.
+    """
     global _StoppedFlag
     return _StoppedFlag
     
-    
-#def AddBlockRebuilder(obj):
-#    global _BlockRebuildersQueue
-#    dhnio.Dprint(10, 'backup_rebuilder.AddBlockRebuilder for %s-%s' % (obj.backupID, str(obj.blockNum)))
-#    _BlockRebuildersQueue.append(obj)
-    
-
-#def RemoveBlockRebuilder(obj):
-#    global _BlockRebuildersQueue
-#    dhnio.Dprint(10, 'backup_rebuilder.RemoveBlockRebuilder for %s-%s' % (obj.backupID, str(obj.blockNum)))
-#    _BlockRebuildersQueue.remove(obj)
-
-
-    
-    
-
     
