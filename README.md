@@ -1,9 +1,7 @@
 ATTENTION!
 ==========
 
-I'm working on a [BitDust project](http://bitdust.io) which is the next generation of that project.
-DataHaven.NET project is no longer supported.
-
+I'm working on a BitDust project - [www.bitdust.io](http://bitdust.io) which is the next generation of that project. DataHaven.NET project is no longer supported.
 
 
 DataHaven.NET
